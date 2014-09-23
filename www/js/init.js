@@ -12,7 +12,7 @@ $fh.ready(function() {
 
   $fh.cloud(
     {
-      path:'list'
+      path:'cloud/list'
     },
     function(res) {
       alert(JSON.stringify(res));
