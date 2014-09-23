@@ -6,11 +6,11 @@ loading the local config and binding a click event to invoke the cloud action
 call which will return the remote config.
 */
 
-fh.ready(function() {
+$fh.ready(function() {
   // Device is ready.
   document.getElementById('list_button').onclick = function() {
 
-  fh.cloud(
+  $fh.cloud(
     {
       path:'cloud/list'
     },
