@@ -10,7 +10,7 @@ $fh.ready(function() {
   // Device is ready.
   document.getElementById('list_button').onclick = function() {
 
-  $fh.cloud(
+  fh.cloud(
     {
       path:'cloud/list'
     },
