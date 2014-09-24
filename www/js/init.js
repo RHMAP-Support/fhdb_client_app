@@ -46,7 +46,7 @@ $fh.ready(function() {
 
   $fh.cloud(
     {
-      path:'cloud/listLastName'
+      path:'fhdb/listLastName'
     },
     function(res) {
       document.getElementById('Results').innerHTML = JSON.stringify(res);
@@ -63,7 +63,7 @@ $fh.ready(function() {
 
   $fh.cloud(
     {
-      path:'cloud/addMrJones'
+      path:'fhdb/addMrJones'
     },
     function(res) {
       document.getElementById('Results').innerHTML = JSON.stringify(res);
@@ -79,7 +79,7 @@ $fh.ready(function() {
 
   $fh.cloud(
     {
-      path:'cloud/addMrSmith'
+      path:'fhdb/addMrSmith'
     },
     function(res) {
       document.getElementById('Results').innerHTML = JSON.stringify(res);
