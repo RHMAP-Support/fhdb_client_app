@@ -15,11 +15,9 @@ $fh.ready(function() {
       path:'fhdb/list'
     },
     function(res) {
-      alert(JSON.stringify(res));
       document.getElementById('Results').innerHTML = JSON.stringify(res);
     },
     function(code,errorprops,params) {
-      alert('An error occured: ' + code + ' : ' + errorprops.error);
       console.log('An error occured: ' + code + ' : ' + errorprops.error);
       document.getElementById('Results').innerHTML = 'An error occured: ' + code + ' : ' + errorprops.error;
     }
