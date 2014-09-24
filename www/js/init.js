@@ -13,7 +13,7 @@ $fh.ready(function() {
   $fh.cloud(
     {
       path:'fhdb',
-      type: "GET"
+      type: "POST"
     },
     function(res) {
       alert(JSON.stringify(res));
