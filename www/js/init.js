@@ -30,7 +30,7 @@ $fh.ready(function() {
 
   $fh.cloud(
     {
-      path:'cloud/deleteall'
+      path:'fhdb/deleteall'
     },
     function(res) {
       document.getElementById('Results').innerHTML = JSON.stringify(res);
