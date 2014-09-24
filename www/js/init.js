@@ -12,7 +12,7 @@ $fh.ready(function() {
 
   $fh.cloud(
     {
-      path:'/fhdb/list',
+      path:'/',
       type: "GET"
     },
     function(res) {
