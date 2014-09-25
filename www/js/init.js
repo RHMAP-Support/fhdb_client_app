@@ -24,7 +24,7 @@ $fh.ready(function() {
       document.getElementById('Results').innerHTML = 'An error occured: ' + code + ' : ' + errorprops.error;
     }
   );
-};
+  };
 
   document.getElementById('deleteall_button').onclick = function() {
   // Wipe all entries.
@@ -42,7 +42,7 @@ $fh.ready(function() {
       document.getElementById('Results').innerHTML = 'An error occured: ' + code + ' : ' + errorprops.error;
     }
   );
-};
+  };
 
   document.getElementById('list_smith_button').onclick = function() {
   // List all entries for "Mr Smith"
@@ -59,7 +59,7 @@ $fh.ready(function() {
       document.getElementById('Results').innerHTML = 'An error occured: ' + code + ' : ' + errorprops.error;
     }
   );
-};
+  };
 
   document.getElementById('addjones_button').onclick = function() {
   // Add Jones entry.
@@ -77,7 +77,7 @@ $fh.ready(function() {
       document.getElementById('Results').innerHTML = 'An error occured: ' + code + ' : ' + errorprops.error;
     }
   );
-};
+  };
 
   document.getElementById('addsmith_button').onclick = function() {
   // Add Smith entry.
@@ -95,6 +95,5 @@ $fh.ready(function() {
       document.getElementById('Results').innerHTML = 'An error occured: ' + code + ' : ' + errorprops.error;
     }
   );
-};
-
+  };
 });
