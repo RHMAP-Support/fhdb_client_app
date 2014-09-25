@@ -79,7 +79,7 @@ $fh.ready(function() {
   );
 };
 
-  document.getElementById('addjack_button').onclick = function() {
+  document.getElementById('addsmith_button').onclick = function() {
 
   $fh.cloud(
     {
