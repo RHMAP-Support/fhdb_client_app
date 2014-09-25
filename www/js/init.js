@@ -27,7 +27,7 @@ $fh.ready(function() {
 };
 
   document.getElementById('deleteall_button').onclick = function() {
-  // Wipte all entries.
+  // Wipe all entries.
   $fh.cloud(
     {
       path:'fhdb/deleteall'
