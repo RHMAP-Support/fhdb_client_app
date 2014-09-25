@@ -9,7 +9,7 @@ call which will return the remote config.
 $fh.ready(function() {
   // Device is ready.
   document.getElementById('list_button').onclick = function() {
-  // List all entries in the database.
+  // List all entries.
   $fh.cloud(
     {
       path:'fhdb/list'
@@ -44,8 +44,8 @@ $fh.ready(function() {
   );
 };
 
-  document.getElementById('list_lastname_button').onclick = function() {
-
+  document.getElementById('list_smith_button').onclick = function() {
+  // List all entries for "Mr Smith"
   $fh.cloud(
     {
       path:'fhdb/listLastName'
@@ -61,9 +61,8 @@ $fh.ready(function() {
   );
 };
 
-
   document.getElementById('addjim_button').onclick = function() {
-
+  // 
   $fh.cloud(
     {
       path:'fhdb/addMrJones'
