@@ -62,7 +62,7 @@ $fh.ready(function() {
 };
 
   document.getElementById('addjones_button').onclick = function() {
-  // 
+  // Add Jones entry.
   $fh.cloud(
     {
       path:'fhdb/addMrJones'
@@ -80,7 +80,7 @@ $fh.ready(function() {
 };
 
   document.getElementById('addsmith_button').onclick = function() {
-
+  // Add Smith entry.
   $fh.cloud(
     {
       path:'fhdb/addMrSmith'
