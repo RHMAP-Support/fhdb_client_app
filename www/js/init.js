@@ -61,7 +61,7 @@ $fh.ready(function() {
   );
 };
 
-  document.getElementById('addjim_button').onclick = function() {
+  document.getElementById('addjones_button').onclick = function() {
   // 
   $fh.cloud(
     {
