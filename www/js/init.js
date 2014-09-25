@@ -26,7 +26,6 @@ $fh.ready(function() {
   );
   };
 
-
   document.getElementById('deleteall_button').onclick = function() {
   // Wipe all entries.
   $fh.cloud(
