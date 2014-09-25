@@ -9,15 +9,17 @@ call which will return the remote config.
 $fh.ready(function() {
   // Device is ready.
   document.getElementById('list_button').onclick = function() {
-
+  // List all entries in the database.
   $fh.cloud(
     {
       path:'fhdb/list'
     },
     function(res) {
+      // Success
       document.getElementById('Results').innerHTML = JSON.stringify(res);
     },
     function(code,errorprops,params) {
+      // Error
       console.log('An error occured: ' + code + ' : ' + errorprops.error);
       document.getElementById('Results').innerHTML = 'An error occured: ' + code + ' : ' + errorprops.error;
     }
@@ -25,15 +27,17 @@ $fh.ready(function() {
 };
 
   document.getElementById('deleteall_button').onclick = function() {
-
+  // Wipte all entries.
   $fh.cloud(
     {
       path:'fhdb/deleteall'
     },
     function(res) {
+      // Success
       document.getElementById('Results').innerHTML = JSON.stringify(res);
     },
     function(code,errorprops,params) {
+      // Error
       console.log('An error occured: ' + code + ' : ' + errorprops.error);
       document.getElementById('Results').innerHTML = 'An error occured: ' + code + ' : ' + errorprops.error;
     }
@@ -50,6 +54,7 @@ $fh.ready(function() {
       document.getElementById('Results').innerHTML = JSON.stringify(res);
     },
     function(code,errorprops,params) {
+      // Error
       console.log('An error occured: ' + code + ' : ' + errorprops.error);
       document.getElementById('Results').innerHTML = 'An error occured: ' + code + ' : ' + errorprops.error;
     }
@@ -64,9 +69,11 @@ $fh.ready(function() {
       path:'fhdb/addMrJones'
     },
     function(res) {
+      // Success
       document.getElementById('Results').innerHTML = JSON.stringify(res);
     },
     function(code,errorprops,params) {
+      // Error
       console.log('An error occured: ' + code + ' : ' + errorprops.error);
       document.getElementById('Results').innerHTML = 'An error occured: ' + code + ' : ' + errorprops.error;
     }
@@ -80,9 +87,11 @@ $fh.ready(function() {
       path:'fhdb/addMrSmith'
     },
     function(res) {
+      // Success
       document.getElementById('Results').innerHTML = JSON.stringify(res);
     },
     function(code,errorprops,params) {
+      // Error
       console.log('An error occured: ' + code + ' : ' + errorprops.error);
       document.getElementById('Results').innerHTML = 'An error occured: ' + code + ' : ' + errorprops.error;
     }
