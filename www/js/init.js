@@ -10,7 +10,7 @@ $fh.ready(function() {
   // Device is ready.
   document.getElementById('list_button').onclick = function() {
   // List all entries.
-  $fh.act(
+  $fh.cloud(
     {
       path:'fhdb/list'
     },
