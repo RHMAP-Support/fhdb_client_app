@@ -12,7 +12,7 @@ $fh.ready(function() {
   // List all entries.
   $fh.act(
     {
-      path:'list'
+      path:'fhdb/list'
     },
     function(res) {
       // Success
