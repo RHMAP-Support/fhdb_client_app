@@ -65,8 +65,7 @@ $fh.ready(function() {
   // Add Jones entry.
   $fh.cloud(
     {
-      path:'fhdb/addMrJones',
-      type: 'GET'
+      path:'fhdb/addMrJones'
     },
     function(res) {
       // Success
