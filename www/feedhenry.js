@@ -4216,6 +4216,11 @@ Lawnchair.adapter('html5-filesystem', (function(global){
       var error = function(e) { fail(e); if ( callback ) me.fn( me.name, callback ).call( me, me ); };
       var size = options.size || 100*1024*1024;
       var name = this.name;
+      //disable file backup to icloud
+      me.backup = false;
+      if(typeof options.backup !== 'undefined'){
+        me.backup = options.backup;
+      }
 
       function requestFileSystem(amount) {
 //        console.log('in requestFileSystem');
@@ -4272,7 +4277,7 @@ Lawnchair.adapter('html5-filesystem', (function(global){
       obj.key = key;
       var error = function(e) { fail(e); if ( callback ) me.lambda( callback ).call( me ); };
       root( this, function( store ) {
-        store.getFile( key, {create:true}, function( file ) {
+        var writeContent = function(file, error){
           file.createWriter(function( writer ) {
             writer.onerror = error;
             writer.onwriteend = function() {
@@ -4289,6 +4294,18 @@ Lawnchair.adapter('html5-filesystem', (function(global){
             var writerContent = createBlobOrString(contentStr);
             writer.write(writerContent);
           }, error );
+        }
+        store.getFile( key, {create:true}, function( file ) {
+          if(typeof file.setMetadata === 'function' && (me.backup === false || me.backup === 'false')){
+            //set meta data on the file to make sure it won't be backed up by icloud
+            file.setMetadata(function(){
+              writeContent(file, error);
+            }, function(){
+              writeContent(file, error);
+            }, {'com.apple.MobileBackup': 1});
+          } else {
+            writeContent(file, error);
+          }
         }, error );
       });
       return this;
@@ -6777,8 +6794,8 @@ function hasOwnProperty(obj, prop) {
   return Object.prototype.hasOwnProperty.call(obj, prop);
 }
 
-}).call(this,_dereq_("/mnt/ebs1/workspace/fh-js-sdk_release/node_modules/browserify/node_modules/insert-module-globals/node_modules/process/browser.js"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./support/isBuffer":6,"/mnt/ebs1/workspace/fh-js-sdk_release/node_modules/browserify/node_modules/insert-module-globals/node_modules/process/browser.js":11,"inherits":10}],8:[function(_dereq_,module,exports){
+}).call(this,_dereq_("/Users/ndonnelly/program_source_for_dev/fh-js-sdk/node_modules/browserify/node_modules/insert-module-globals/node_modules/process/browser.js"),typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
+},{"./support/isBuffer":6,"/Users/ndonnelly/program_source_for_dev/fh-js-sdk/node_modules/browserify/node_modules/insert-module-globals/node_modules/process/browser.js":11,"inherits":10}],8:[function(_dereq_,module,exports){
 (function (global){
 /*global window, global*/
 var util = _dereq_("util")
@@ -7256,7 +7273,7 @@ process.chdir = function (dir) {
 module.exports=_dereq_(6)
 },{}],13:[function(_dereq_,module,exports){
 module.exports=_dereq_(7)
-},{"./support/isBuffer":12,"/mnt/ebs1/workspace/fh-js-sdk_release/node_modules/browserify/node_modules/insert-module-globals/node_modules/process/browser.js":11,"inherits":10}],14:[function(_dereq_,module,exports){
+},{"./support/isBuffer":12,"/Users/ndonnelly/program_source_for_dev/fh-js-sdk/node_modules/browserify/node_modules/insert-module-globals/node_modules/process/browser.js":11,"inherits":10}],14:[function(_dereq_,module,exports){
 /*
  * loglevel - https://github.com/pimterry/loglevel
  *
@@ -7744,7 +7761,7 @@ var ajax = module.exports = function (options) {
     baseHeaders = {},
     protocol = /^([\w-]+:)\/\//.test(settings.url) ? RegExp.$1 : window.location.protocol,
     xhr = settings.xhr(settings.crossDomain),
-    abortTimeout
+    abortTimeout = null;
 
   if (!settings.crossDomain) baseHeaders['X-Requested-With'] = 'XMLHttpRequest'
   if (mime) {
@@ -7757,13 +7774,13 @@ var ajax = module.exports = function (options) {
   settings.headers = extend(baseHeaders, settings.headers || {})
 
   if (typeof Titanium !== 'undefined') {
-    xhr.setOnerror(function(){
+    xhr.onerror  = function(){
       if (!abortTimeout){
         return;
       }
       clearTimeout(abortTimeout);
       ajaxError(null, 'error', xhr, settings);
-    });
+    };
   }
 
   xhr.onreadystatechange = function () {
@@ -7953,9 +7970,11 @@ function getXhr(crossDomain){
   }
   // For Titanium SDK
   if (typeof Titanium !== 'undefined'){
-    xhr = Titanium.Network.createHTTPClient({
-      timeout: ajax.settings.timeout
-    });
+    var parms = {};
+    if(ajax.settings && ajax.settings.timeout){
+      params.timeout = ajax.settings.timeout;
+    }
+    xhr = Titanium.Network.createHTTPClient(params);
   }
 
   return xhr;
@@ -8529,7 +8548,7 @@ module.exports = {
 },{"./fhparams":31,"./logger":37,"./queryMap":39,"JSON":3}],27:[function(_dereq_,module,exports){
 module.exports = {
   "boxprefix": "/box/srv/1.1/",
-  "sdk_version": "2.1.2-137",
+  "sdk_version": "2.4.3-152",
   "config_js": "fhconfig.json",
   "INIT_EVENT": "fhinit",
   "INTERNAL_CONFIG_LOADED_EVENT": "internalfhconfigloaded",
@@ -9457,9 +9476,10 @@ var self = {
     // Storage strategy to use for Lawnchair - supported strategies are 'html5-filesystem' and 'dom'
     "file_system_quota" : 50 * 1024 * 1204,
     // Amount of space to request from the HTML5 filesystem API when running in browser
-    "has_custom_sync" : null
+    "has_custom_sync" : null,
     //If the app has custom cloud sync function, it should be set to true. If set to false, the default mbaas sync implementation will be used. When set to null or undefined, 
     //a check will be performed to determine which implementation to use
+    "icloud_backup" : false //ios only. If set to true, the file will be backed by icloud
   },
 
   notifications: {
@@ -9492,7 +9512,10 @@ var self = {
   // Initialise config to default values;
   config: undefined,
 
+  //TODO: deprecate this
   notify_callback: undefined,
+
+  notify_callback_map : {},
 
   init_is_called: false,
 
@@ -9512,8 +9535,12 @@ var self = {
     }
   },
 
-  notify: function(callback) {
-    self.notify_callback = callback;
+  notify: function(datasetId, callback) {
+    if(arguments.length === 1 && typeof datasetId === 'function'){
+      self.notify_callback = datasetId;
+    } else {
+      self.notify_callback_map[datasetId] = callback;
+    }
   },
 
   manage: function(dataset_id, options, query_params, meta_data, cb) {
@@ -9707,7 +9734,8 @@ var self = {
 
   doNotify: function(dataset_id, uid, code, message) {
 
-    if( self.notify_callback ) {
+    if( self.notify_callback || self.notify_callback_map[dataset_id]) {
+      var notifyFunc = self.notify_callback_map[dataset_id] || self.notify_callback;
       if ( self.config['notify_' + code] ) {
         var notification = {
           "dataset_id" : dataset_id,
@@ -9717,7 +9745,7 @@ var self = {
         };
         // make sure user doesn't block
         setTimeout(function () {
-          self.notify_callback(notification);
+          notifyFunc(notification);
         }, 0);
       }
     }
@@ -10155,8 +10183,7 @@ var self = {
     for( var dataset_id in self.datasets ) {
       if( self.datasets.hasOwnProperty(dataset_id) ) {
         var dataset = self.datasets[dataset_id];
-
-        if( !dataset.syncRunning && (dataset.config.sync_active || dataset.syncForced)) {
+        if(dataset && !dataset.syncRunning && (dataset.config.sync_active || dataset.syncForced)) {
           // Check to see if it is time for the sync loop to run again
           var lastSyncStart = dataset.syncLoopStart;
           var lastSyncCmp = dataset.syncLoopEnd;
@@ -10250,7 +10277,7 @@ var self = {
         success(res);
       }, function(msg, err) {
         failure(msg, err);
-      })
+      });
     }
   },
 
@@ -10263,17 +10290,21 @@ var self = {
     }, 500);
   },
 
-  saveDataSet: function (dataset_id, cb) {
-    var onFail =  function(msg, err) {
-      // save failed
-      var errMsg = 'save to local storage failed  msg:' + msg + ' err:' + err;
+  getStorageAdapter: function(dataset_id, isSave, cb){
+    var onFail = function(msg, err){
+      var errMsg = (isSave?'save to': 'load from' ) + ' local storage failed msg: ' + msg + ' err: ' + err;
       self.doNotify(dataset_id, null, self.notifications.CLIENT_STORAGE_FAILED, errMsg);
       self.consoleLog(errMsg);
     };
+    Lawnchair({fail:onFail, adapter: self.config.storage_strategy, size:self.config.file_system_quota, backup: self.config.icloud_backup}, function(){
+      return cb(null, this);
+    });
+  },
+
+  saveDataSet: function (dataset_id, cb) {
     self.getDataSet(dataset_id, function(dataset) {
-      // save dataset to local storage
-      Lawnchair({fail:onFail, adapter: self.config.storage_strategy, size:self.config.file_system_quota}, function (){
-        this.save({key:"dataset_" + dataset_id, val:dataset}, function(){
+      self.getStorageAdapter(dataset_id, true, function(err, storage){
+        storage.save({key:"dataset_" + dataset_id, val:dataset}, function(){
           //save success
           if(cb) return cb();
         });
@@ -10282,35 +10313,39 @@ var self = {
   },
 
   loadDataSet: function (dataset_id, success, failure) {
-    // load dataset from local storage
-    var onFail = function(msg, err) {
-      // load failed
-      var errMsg = 'load from local storage failed  msg:' + msg;
-      self.doNotify(dataset_id, null, self.notifications.CLIENT_STORAGE_FAILED, errMsg);
-      self.consoleLog(errMsg);
-    };
-
-        Lawnchair({fail:onFail, adapter: self.config.storage_strategy, size:self.config.file_system_quota},function (){       
-          this.get( "dataset_" + dataset_id, function (data){
-            if (data && data.val) {
-              var dataset = data.val;
-              if(typeof dataset === "string"){
-                dataset = JSON.parse(dataset);
-              }
-              // Datasets should not be auto initialised when loaded - the mange function should be called for each dataset
-              // the user wants sync
-              dataset.initialised = false;
-              self.datasets[dataset_id] = dataset; // TODO: do we need to handle binary data?
-              self.consoleLog('load from local storage success for dataset_id :' + dataset_id);
-              if(success) return success(dataset);
-            } else {
-              // no data yet, probably first time. failure calback should handle this
-              if(failure) return failure();
-            }
-       });
+    self.getStorageAdapter(dataset_id, false, function(err, storage){
+      storage.get( "dataset_" + dataset_id, function (data){
+        if (data && data.val) {
+          var dataset = data.val;
+          if(typeof dataset === "string"){
+            dataset = JSON.parse(dataset);
+          }
+          // Datasets should not be auto initialised when loaded - the mange function should be called for each dataset
+          // the user wants sync
+          dataset.initialised = false;
+          self.datasets[dataset_id] = dataset; // TODO: do we need to handle binary data?
+          self.consoleLog('load from local storage success for dataset_id :' + dataset_id);
+          if(success) return success(dataset);
+        } else {
+          // no data yet, probably first time. failure calback should handle this
+          if(failure) return failure();
+        }
+      });
     });
   },
 
+  clearCache: function(dataset_id, cb){
+    delete self.datasets[dataset_id];
+    self.notify_callback_map[dataset_id] === null;
+    self.getStorageAdapter(dataset_id, true, function(err, storage){
+      storage.remove("dataset_" + dataset_id, function(){
+        self.consoleLog('local cache is cleared for dataset : ' + dataset_id);
+        if(cb){
+          return cb();
+        }
+      });
+    });
+  },
 
   updateDatasetFromLocal: function(dataset, pendingRec) {
     var pending = dataset.pending;
@@ -10780,7 +10815,8 @@ module.exports = {
   forceSync: self.forceSync,
   generateHash: self.generateHash,
   loadDataSet: self.loadDataSet,
-  checkHasCustomSync: self.checkHasCustomSync
+  checkHasCustomSync: self.checkHasCustomSync,
+  clearCache: self.clearCache
 };
 },{"../../libs/generated/crypto":1,"../../libs/generated/lawnchair":2,"./api_act":19,"./api_cloud":21,"JSON":3}],46:[function(_dereq_,module,exports){
 module.exports = {
@@ -13246,59 +13282,95 @@ appForm.utils = function(module) {
         });
     }
 
+    function _getSaveObject(content){
+      var saveObj = null;
+      if (typeof content === 'object' && content !== null) {
+        if (content instanceof File || content instanceof Blob) {
+          //File object
+          saveObj = content;
+        } else {
+          //JSON object
+          var contentstr = JSON.stringify(content);
+          saveObj = _createBlobOrString(contentstr);
+        }
+      } else if (typeof content === 'string') {
+        saveObj = _createBlobOrString(content);
+      }
+
+      return saveObj;
+    }
+
     /**
      * Save a content to file system into a file
+     *
+     * In the case where the content is a File and PhoneGap is available, the function will attempt to use the "copyTo" function instead of writing the file.
+     * This is because windows phone does not allow writing binary files with PhoneGap.
      * @param  {[type]} fileName file name to be stored.
      * @param  {[type]} content  json object / string /  file object / blob object
      * @param  {[type]} cb  (err, result)
      * @return {[type]}          [description]
      */
     function save(fileName, content, cb) {
-        var saveObj = null;
-        var size = 0;
-        if (typeof content === 'object') {
-            if (content instanceof File) {
-                //File object
-                saveObj = content;
-                size = saveObj.size;
-            } else if (content instanceof Blob) {
-                saveObj = content;
-                size = saveObj.size;
-            } else {
-                //JSON object
-                var contentstr = JSON.stringify(content);
-                saveObj = _createBlobOrString(contentstr);
-                size = saveObj.size || saveObj.length;
-            }
-        } else if (typeof content === 'string') {
-            saveObj = _createBlobOrString(content);
-            size = saveObj.size || saveObj.length;
-        }
+      var self = this;
+      var saveObj = _getSaveObject(content);
+      if(saveObj === null){
+        return cb("Invalid content type. Object was null");
+      }
+      var size = saveObj.size || saveObj.length;
 
-        _getFileEntry(fileName, size, {
-            create: true
-        }, function(err, fileEntry) {
-            if (err) {
-                cb(err);
-            } else {
-                fileEntry.createWriter(function(writer) {
-                    function _onFinished(evt) {
-                        return cb(null, evt);
-                    }
+      _getFileEntry(fileName, size, {
+          create: true
+      }, function(err, fileEntry) {
+          if (err) {
+              cb(err);
+          } else {
+            if(appForm.utils.isPhoneGap() && saveObj instanceof File){
+              //Writing binary files is not possible in windows phone.
+              //So if the thing to save is a file, and it is in phonegap, use the copyTo functions instead.
+              fileEntry.getParent(function(parentDir){
+                //Get the file entry for the file input
+                _resolveFile(saveObj.fullPath, function(err, fileToCopy){
+                  if(err){
+                    return cb(err);
+                  }
+                  fileName = fileEntry.name;
 
-                    function _onTruncated() {
-                        writer.onwriteend = _onFinished;
-                        writer.write(saveObj); //write method can take a blob or file object according to html5 standard.
-                    }
-                    writer.onwriteend = _onTruncated;
-                    //truncate the file first.
-                    writer.truncate(0);
-                }, function(e) {
-                    console.error("fileEntry.createWriter Failed to create file write: " + e);
-                    cb('Failed to create file write:' + e);
+                  fileEntry.remove(function(){
+                    fileToCopy.copyTo(parentDir, fileName, function(copiedFile){
+                      return cb(null, copiedFile);
+                    }, function(err){
+                      return cb(err);
+                    });
+                  }, function(err){
+                    return cb(err);
+                  });
+                }, function(err){
+                  return cb(err);
                 });
+              }, function(err){
+                return cb(err);
+              });
+            }  else {
+              //Otherwise, just write text
+              fileEntry.createWriter(function(writer) {
+                function _onFinished(evt) {
+                  return cb(null, evt);
+                }
+
+                function _onTruncated() {
+                  writer.onwriteend = _onFinished;
+                  writer.write(saveObj); //write method can take a blob or file object according to html5 standard.
+                }
+                writer.onwriteend = _onTruncated;
+                //truncate the file first.
+                writer.truncate(0);
+              }, function(e) {
+                cb('Failed to create file write:' + e);
+              });
             }
-        });
+
+          }
+      });
     }
     /**
      * Remove a file from file system
@@ -13318,7 +13390,6 @@ appForm.utils = function(module) {
             fileEntry.remove(function() {
                 cb(null, null);
             }, function(e) {
-                console.error("file remove fileEntry.remove failed " + e);
                 cb('Failed to remove file' + e);
             });
         });
@@ -13414,33 +13485,55 @@ appForm.utils = function(module) {
             fe.file(function(file) {
                 cb(null, file);
             }, function(e) {
-                console.error('Failed to get file:' + e);
                 cb(e);
             });
         });
     }
 
+    function _resolveFile(fileName, cb){
+      //This is necessary to get the correct uri for apple. The URI in a file object for iphone does not have the file:// prefix.
+      //This gives invalid uri errors when trying to resolve.
+      if(fileName.indexOf("file://") === -1 && window.device.platform !== "Win32NT"){
+        fileName = "file://" + fileName;
+      }
+      window.resolveLocalFileSystemURI(fileName, function(fileEntry){
+        return cb(null, fileEntry);
+      }, function(err){
+        return cb(err);
+      });
+    }
+
     function _getFileEntry(fileName, size, params, cb) {
-        _checkEnv();
+      var self = this;
+      _checkEnv();
+      if(typeof(fileName) === "string"){
         _requestFileSystem(PERSISTENT, size, function gotFS(fileSystem) {
-            fileSystem.root.getFile(fileName, params, function gotFileEntry(fileEntry) {
-                cb(null, fileEntry);
-            }, function(err) {
-                if (err.name === 'QuotaExceededError' || err.code === 10) {
-                    //this happens only on browser. request for 1 gb storage
-                    //TODO configurable from cloud
-                    var bigSize = 1024 * 1024 * 1024;
-                    _requestQuote(bigSize, function(err, bigSize) {
-                        _getFileEntry(fileName, size, params, cb);
-                    });
-                } else {
-                    cb(err);
-                }
-            });
+          fileSystem.root.getFile(fileName, params, function gotFileEntry(fileEntry) {
+            cb(null, fileEntry);
+          }, function(err) {
+            if (err.name === 'QuotaExceededError' || err.code === 10) {
+              //this happens only on browser. request for 1 gb storage
+              //TODO configurable from cloud
+              var bigSize = 1024 * 1024 * 1024;
+              _requestQuote(bigSize, function(err, bigSize) {
+                _getFileEntry(fileName, size, params, cb);
+              });
+            } else {
+              if(!appForm.utils.isPhoneGap()){
+                return cb(err);
+              } else {
+                _resolveFile(fileName, cb);
+              }
+            }
+          });
         }, function() {
-            console.error('Failed to requestFileSystem: ' + fileName);
-            cb('Failed to requestFileSystem');
+          cb('Failed to requestFileSystem');
         });
+      } else {
+        if(typeof(cb) === "function"){
+          cb("Expected file name to be a string but was " + fileName);
+        }
+      }
     }
 
     function _requestQuote(size, cb) {
@@ -13458,7 +13551,6 @@ appForm.utils = function(module) {
     }
 
     function _checkEnv() {
-        // debugger;
         if (window.requestFileSystem) {
             _requestFileSystem = window.requestFileSystem;
             fileSystemAvailable = true;
@@ -13515,24 +13607,30 @@ appForm.utils = function (module) {
     var width =  params.targetWidth ? params.targetWidth : $fh.forms.config.get("targetWidth", 640);
     var height = params.targetHeight ? params.targetHeight : $fh.forms.config.get("targetHeight", 480);
     var quality= params.quality ? params.quality : $fh.forms.config.get("quality", 50);
+    //For Safety, the default value of saving to photo album is true.
+    var saveToPhotoAlbum = typeof(params.saveToPhotoAlbum) !== "undefined" ? params.saveToPhotoAlbum : $fh.forms.config.get("saveToPhotoAlbum");
+    var encodingType = params.encodingType ? params.encodingType : $fh.forms.config.get("encodingType", 'jpeg');
 
     params.targetWidth = width;
     params.targetHeight = height;
     params.quality = quality;
+    params.saveToPhotoAlbum = saveToPhotoAlbum;
+    params.encodingType = encodingType;
 
     if ("undefined" === typeof(params.sourceType) && typeof(Camera) !== 'undefined') {
       params.sourceType = Camera.PictureSourceType.CAMERA;
     }
 
     if (isPhoneGap) {
+      params.encodingType = params.encodingType === 'jpeg' ? Camera.EncodingType.JPEG : Camera.EncodingType.PNG;
       navigator.camera.getPicture(_phoneGapSuccess(cb), cb, {
         quality: quality,
         targetWidth: width,
         targetHeight: height,
         sourceType: params.sourceType,
-        saveToPhotoAlbum: false,
-        destinationType: Camera.DestinationType.DATA_URL,
-        encodingType: Camera.EncodingType.PNG
+        saveToPhotoAlbum: params.saveToPhotoAlbum,
+        destinationType: Camera.DestinationType.FILE_URI,
+        encodingType: params.encodingType
       });
     } else if (isHtml5) {
       snapshot(params, cb);
@@ -13542,8 +13640,8 @@ appForm.utils = function (module) {
   }
   function _phoneGapSuccess(cb) {
     return function (imageData) {
-      var base64Img = 'data:image/png;base64,' + imageData;
-      cb(null, base64Img);
+      var imageURI = imageData;
+      cb(null, imageURI);
     };
   }
   function _html5Camera(params, cb) {
@@ -13779,7 +13877,7 @@ appForm.stores = function (module) {
   Store.prototype.update = function (model, cb) {
     throw 'Update not implemented:' + this.name;
   };
-  Store.prototype["delete"] = function (model, cb) {
+  Store.prototype.removeEntry = function (model, cb) {
     throw 'Delete not implemented:' + this.name;
   };
   Store.prototype.upsert = function (model, cb) {
@@ -13808,24 +13906,26 @@ appForm.stores = function(module) {
   };
   //read a model from local storage
   LocalStorage.prototype.read = function(model, cb) {
-    if (model.get("_type") === "offlineTest") {
-      cb(null, {});
-    } else {
-      var key = model.getLocalId();
-      if (key != null) {
-        _fhData({
-          'act': 'load',
-          'key': key.toString()
-        }, cb, cb);
-      } else {
-        //model does not exist in local storage if key is null.
-        cb(null, null);
+    if(typeof(model) === "object"){
+      if (model.get("_type") === "offlineTest"){
+        return cb(null, {});
       }
+    }
+
+    var key = _getKey(model);
+    if (key != null) {
+      _fhData({
+        'act': 'load',
+        'key': key.toString()
+      }, cb, cb);
+    } else {
+      //model does not exist in local storage if key is null.
+      cb(null, null);
     }
   };
   //update a model
   LocalStorage.prototype.update = function(model, cb) {
-    var key = model.getLocalId();
+    var key = _getKey(model);
     var data = model.getProps();
     var dataStr = JSON.stringify(data);
     _fhData({
@@ -13835,15 +13935,15 @@ appForm.stores = function(module) {
     }, cb, cb);
   };
   //delete a model
-  LocalStorage.prototype["delete"] = function(model, cb) {
-    var key = model.getLocalId();
+  LocalStorage.prototype.removeEntry = function(model, cb) {
+    var key = _getKey(model);
     _fhData({
       'act': 'remove',
       'key': key.toString()
     }, cb, cb);
   };
   LocalStorage.prototype.upsert = function(model, cb) {
-    var key = model.getLocalId();
+    var key = _getKey(model);
     if (key === null) {
       this.create(model, cb);
     } else {
@@ -13860,9 +13960,43 @@ appForm.stores = function(module) {
       return fileSystem.isFileSystemAvailable();
     };
   };
+  LocalStorage.prototype.saveFile = function(fileName, fileToSave, cb){
+    if(!_fileSystemAvailable()){
+      return cb("File system not available");
+    }
+
+    _fhData({
+      'act': 'save',
+      'key': fileName,
+      'val': fileToSave
+    }, cb, cb);
+  };
+  LocalStorage.prototype.updateTextFile = function(key, dataStr, cb){
+    _fhData({
+      'act': 'save',
+      'key': key,
+      'val': dataStr
+    }, cb, cb);
+  };
+  LocalStorage.prototype.readFile = function(fileName, cb){
+    _fhData({
+      'act': 'loadFile',
+      'key': fileName
+    }, cb, cb);
+  };
+  LocalStorage.prototype.readFileText = function(fileName, cb){
+    _fhData({
+      'act': 'load',
+      'key': fileName
+    }, cb, cb);
+  };
   _fileSystemAvailable = function() {
     return fileSystem.isFileSystemAvailable();
   };
+
+  function _getKey(key){
+    return typeof(key.getLocalId) === "function" ? key.getLocalId() : key;
+  }
   //use different local storage model according to environment
   function _fhData() {
     if (_fileSystemAvailable()) {
@@ -13907,7 +14041,13 @@ appForm.stores = function(module) {
         if (err) {
           hash = key;
         }
-        var filename = hash + '.txt';
+
+        var filename = hash;
+
+        if(key.indexOf("filePlaceHolder") === -1){
+          filename += ".txt";
+        }
+
         if (typeof navigator.externalstorage !== 'undefined') {
           navigator.externalstorage.enable(function handleSuccess(res) {
             var path = filename;
@@ -13975,6 +14115,23 @@ appForm.stores = function(module) {
       });
     }
 
+    function loadFile(key) {
+      filenameForKey(key, function(hash) {
+        fileSystem.readAsFile(hash, function(err, file) {
+          if (err) {
+            if (err.name === 'NotFoundError' || err.code === 1) {
+              //same respons of $fh.data if key not found.
+              success(null, null);
+            } else {
+              fail(err);
+            }
+          } else {
+            success(null, file);
+          }
+        });
+      });
+    }
+
     if (typeof options.act === 'undefined') {
       return load(options.key);
     } else if (options.act === 'save') {
@@ -13983,6 +14140,8 @@ appForm.stores = function(module) {
       return remove(options.key);
     } else if (options.act === 'load') {
       return load(options.key);
+    } else if (options.act === 'loadFile') {
+      return loadFile(options.key);
     } else {
       if (typeof failure !== 'undefined') {
         return failure('Action [' + options.act + '] is not defined', {});
@@ -14429,7 +14588,7 @@ appForm.models = function (module) {
      */
   Model.prototype.clearLocal = function (cb) {
     var localStorage = appForm.stores.localStorage;
-    localStorage["delete"](this, cb);
+    localStorage.removeEntry(this, cb);
   };
   Model.prototype.getDataAgent = function () {
     if (!this.dataAgent) {
@@ -14561,7 +14720,11 @@ appForm.models = function(module) {
       "log_email": "test@example.com",
       "log_level": 3,
       "log_levels": ["error", "warning", "log", "debug"],
-      "config_admin_user": true
+      "config_admin_user": true,
+      "picture_source": "both",
+      "saveToPhotoAlbum": true,
+      "encodingType": "jpeg",
+      "sent_items_to_keep_list": [5, 10, 20, 30, 40, 50, 100]
     };
 
     for(var key in staticConfig){
@@ -14606,12 +14769,20 @@ appForm.models = function(module) {
     self.set('statusUrl', '/sys/info/ping');
   };
   Config.prototype.setOnline = function(){
+    var wasOnline = online;
     online = true;
-    this.emit('online');
+
+    if(!wasOnline){
+      this.emit('online');
+    }
   };
   Config.prototype.setOffline = function(){
+    var wasOnline = online;
     online = false;
-    this.emit('offline');
+
+    if(wasOnline){
+      this.emit('offline');  
+    }
   };
   Config.prototype.isOnline = function(){
     var self = this;
@@ -14741,6 +14912,22 @@ appForm.models = function (module) {
 
       if(rawData){
         return processRawFormJSON();
+      } else {
+
+        /**
+         * No Form JSON object to process into Models, load the form from local
+         * storage.
+         */
+        that.refresh(false, function(err, form){
+          if(err){
+            return cb(err);
+          }
+
+          form.initialise();
+
+          _forms[formId] = form;
+          return cb(null, form);
+        });
       }
     }
 
@@ -14804,10 +14991,42 @@ appForm.models = function (module) {
      * @return {[type]} [description]
      */
   Form.prototype.initialise = function () {
+    this.filterAdminFields();
     this.initialisePage();
     this.initialiseFields();
     this.initialiseRules();
   };
+  /**
+   * Admin fields should not be part of the form.
+   */
+  Form.prototype.filterAdminFields = function(){
+    var pages = this.getPagesDef();
+    var newFieldRef = {};
+
+
+    for(var pageIndex = 0; pageIndex < pages.length; pageIndex++){
+      var page = pages[pageIndex];
+      var pageFields = page.fields;
+      var filteredFields = [];
+      var fieldInPageIndex = 0;
+
+      for(var fieldIndex = 0; fieldIndex < pageFields.length; fieldIndex++){
+        var field = pageFields[fieldIndex];
+
+        if(!field.adminOnly){
+          newFieldRef[field._id] = {page: pageIndex, field: fieldInPageIndex};
+          fieldInPageIndex++;
+          filteredFields.push(field);
+        }
+      }
+
+      pages[pageIndex].fields = filteredFields;
+    }
+
+    this.set("pages", pages);
+    this.set("fieldRef", newFieldRef);
+  };
+
   Form.prototype.initialiseFields = function () {
     $fh.forms.log.d("Form: initialiseFields");
     var fieldsRef = this.getFieldRef();
@@ -14908,6 +15127,26 @@ appForm.models = function (module) {
   Form.prototype.getFieldModelById = function (fieldId) {
     return this.fields[fieldId];
   };
+  /**
+   * Finding a field model by the Field Code specified in the studio if it exists
+   * Otherwise return null;
+   * @param code - The code of the field that is being searched for
+   */
+  Form.prototype.getFieldModelByCode = function(code){
+    var self = this;
+    if(!code || typeof(code) !== "string"){
+      return null;
+    }
+
+    for(var fieldId in self.fields){
+      var field = self.fields[fieldId];
+      if(field.getCode() !== null && field.getCode() === code){
+        return field;
+      }
+    }
+
+    return null;
+  };
   Form.prototype.getFieldDefByIndex = function (pageIndex, fieldIndex) {
     $fh.forms.log.d("Form: getFieldDefByIndex: ", pageIndex, fieldIndex);
     var pages = this.getPagesDef();
@@ -14983,7 +15222,7 @@ appForm.models = function (module) {
     $fh.forms.log.d("FileSubmission loadFile");
     var fileName = this.getHashName();
     var that = this;
-    appForm.utils.fileSystem.readAsFile(fileName, function (err, file) {
+    appForm.stores.localStorage.readFile(fileName, function (err, file) {
       if (err) {
         $fh.forms.log.e("FileSubmission loadFile. Error reading file", fileName, err);
         cb(err);
@@ -15213,10 +15452,10 @@ appForm.models = function(module) {
         if (sentSubmissions.length > maxSent) {
             $fh.forms.log.d("Submissions clearSentSubmission pruning sentSubmissions.length>maxSent");
             sentSubmissions = sentSubmissions.sort(function(a, b) {
-                if (a.submittedDate < b.submittedDate) {
-                    return -1;
-                } else {
+                if (Date(a.submittedDate) < Date(b.submittedDate)) {
                     return 1;
+                } else {
+                    return -1;
                 }
             });
             var toBeRemoved = [];
@@ -15310,7 +15549,8 @@ appForm.models = function(module) {
             'submissionStartedTimestamp',
             'submittedDate',
             'submissionId',
-            'saveDate'
+            'saveDate',
+            'uploadStartDate'
         ];
         var data = submission.getProps();
         var rtn = {};
@@ -15398,11 +15638,12 @@ appForm.models = function(module) {
 
         var status = params.status;
         var formId = params.formId;
+        var sortField = params.sortField || "createDate";
 
-        var submissions = this.get("submissions");
+        var submissions = this.get("submissions", []);
         var rtn = [];
         for (var i = 0; i < submissions.length; i++) {
-            if (submissions[i].status === status) {
+            if (status.indexOf(submissions[i].status) > -1) {
                 if (formId != null) {
                     if (submissions[i].formId === formId) {
                         rtn.push(submissions[i]);
@@ -15413,6 +15654,15 @@ appForm.models = function(module) {
 
             }
         }
+
+        rtn = rtn.sort(function(a, b) {
+            if (Date(a[sortField]) < Date(b[sortField])) {
+                return -1;
+            } else {
+                return 1;
+            }
+        });
+
         return rtn;
     };
     /**
@@ -15473,23 +15723,24 @@ appForm.models = function(module) {
     ],
     'pending': [
       'inprogress',
-      'error'
+      'error',
+      'draft'
     ],
     'inprogress': [
-      'submitted',
       'pending',
       'error',
       'inprogress',
-      'downloaded'
+      'downloaded',
+      'queued'
     ],
     'submitted': [],
     'error': [
       'draft',
       'pending',
-      'inprogress',
       'error'
     ],
-    'downloaded' : []
+    'downloaded' : [],
+    'queued' : ['error', 'submitted']
   };
 
   function newInstance(form, params) {
@@ -15704,6 +15955,16 @@ appForm.models = function(module) {
       cb(null, null);
     }
   };
+  Submission.prototype.getFormId = function(){
+    return this.get("formId");
+  };
+  /**
+   * If a submission is a download submission, the JSON definition of the form
+   * that it was submitted against is contained in the submission.
+   */
+  Submission.prototype.getFormSubmittedAgainst = function(){
+    return this.get("formSubmittedAgainst");
+  };
   Submission.prototype.getDownloadTask = function(cb){
     var self = this;
     $fh.forms.log.d("getDownloadTask");
@@ -15755,10 +16016,33 @@ appForm.models = function(module) {
     self.set('submittedDate', appForm.utils.getTime());
     self.changeStatus(targetStatus, function(err) {
       if (err) {
+        $fh.forms.log.e("Error setting submitted status " + err);
         cb(err);
       } else {
+        $fh.forms.log.d("Submitted status set for submission " + self.get('submissionId') + " with localId " + self.getLocalId());
         self.emit('submitted', self.get('submissionId'));
         cb(null, null);
+      }
+    });
+  };
+  Submission.prototype.queued = function(cb){
+    var self = this;
+    if(self.isDownloadSubmission()){
+      var errMsg = "Downloaded submissions should not call queued function.";
+      $fh.forms.log.e(errMsg);
+      return cb(errMsg);
+    }
+
+     var targetStatus = 'queued';
+     self.set('queuedDate', appForm.utils.getTime());
+     self.changeStatus(targetStatus, function(err) {
+      if (err) {
+        $fh.forms.log.e("Error setting queued status " + err);
+        cb(err);
+      } else {
+        $fh.forms.log.d("Queued status set for submission " + self.get('submissionId') + " with localId " + self.getLocalId());
+        self.emit('queued', self.get('submissionId'));
+        cb(null, self);
       }
     });
   };
@@ -15770,8 +16054,10 @@ appForm.models = function(module) {
     that.set('downloadedDate', appForm.utils.getTime());
     that.changeStatus(targetStatus, function(err) {
       if (err) {
+        $fh.forms.log.e("Error setting downloaded status " + err);
         cb(err);
       } else {
+        $fh.forms.log.d("Downloaded status set for submission " + that.get('submissionId') + " with localId " + that.getLocalId());
         that.emit('downloaded', that.get('submissionId'));
         cb(null, that);
       }
@@ -15827,7 +16113,6 @@ appForm.models = function(module) {
           cb(null, ut);
         }
       });
-
     } else {
       return cb("Invalid Status to upload a form submission.");
     }
@@ -15873,7 +16158,7 @@ appForm.models = function(module) {
     this.set('errorMessage', errorMsg);
     var targetStatus = 'error';
     this.changeStatus(targetStatus, cb);
-    this.emit('submitted', errorMsg);
+    this.emit('error', errorMsg);
   };
   Submission.prototype.getStatus = function() {
     return this.get('status');
@@ -16004,7 +16289,7 @@ appForm.models = function(module) {
           //File already exists for this input, overwrite rather than create a new file
           if(target.fieldValues[index]){
             if(typeof(target.fieldValues[index].hashName) === "string"){
-              params.filePlaceholder = target.fieldValues[index].hashName;
+              params.previousFile = target.fieldValues[index];
             }
           }
 
@@ -16050,6 +16335,7 @@ appForm.models = function(module) {
     }
   };
   Submission.prototype.getInputValueByFieldId = function(fieldId, cb) {
+    var self = this;
     var values = this.getInputValueObjectById(fieldId).fieldValues;
     this.getForm(function(err, form) {
       var fieldModel = form.getFieldModelById(fieldId);
@@ -16071,7 +16357,7 @@ appForm.models = function(module) {
   };
 
   Submission.prototype.getSubmissionFile = function(fileName, cb){
-    appForm.utils.fileSystem.readAsFile(fileName, cb);
+    appForm.stores.localStorage.readFile(fileName, cb);
   };
   Submission.prototype.clearLocalSubmissionFiles = function(cb) {
     $fh.forms.log.d("In clearLocalSubmissionFiles");
@@ -16082,7 +16368,7 @@ appForm.models = function(module) {
 
     for (var fileMetaObject in filesInSubmission) {
       $fh.forms.log.d("Clearing file " + filesInSubmission[fileMetaObject]);
-      appForm.utils.fileSystem.remove(filesInSubmission[fileMetaObject], function(err) {
+      appForm.stores.localStorage.removeEntry(filesInSubmission[fileMetaObject], function(err) {
         if (err) {
           $fh.forms.log.e("Error removing files from " + err);
         }
@@ -16125,7 +16411,7 @@ appForm.models = function(module) {
           val = valArr[valIndex];
           if(typeof(val.hashName) === "string"){
             //This is a file, needs to be removed
-            appForm.utils.fileSystem.remove(val.hashName, function(err){
+            appForm.stores.localStorage.removeEntry(val.hashName, function(err){
               $fh.forms.log.e("Error removing file from transaction ", err);
             });
           }
@@ -16157,7 +16443,7 @@ appForm.models = function(module) {
     }
 
     if(typeof(valRemoved.hashName) === "string"){
-      appForm.utils.fileSystem.remove(valRemoved.hashName, function(err){
+      appForm.stores.localStorage.removeEntry(valRemoved.hashName, function(err){
         if(err){
           $fh.forms.log.e("Error removing file: ", err);
         } else {
@@ -16243,7 +16529,17 @@ appForm.models = function(module) {
   };
 
   Submission.prototype.getFormFields = function(){
-    return this.get("formFields", []);
+    var formFields = this.get("formFields", []);
+
+    //Removing null values
+    for(var formFieldIndex = 0; formFieldIndex < formFields.length; formFieldIndex++){
+      formFields[formFieldIndex].fieldValues = formFields[formFieldIndex].fieldValues || [];
+      formFields[formFieldIndex].fieldValues = formFields[formFieldIndex].fieldValues.filter(function(fieldValue){
+        return fieldValue !== null && typeof(fieldValue) !== "undefined";
+      });
+    }
+
+    return formFields;
   };
 
   Submission.prototype.getFileFieldsId = function(cb){
@@ -16418,13 +16714,20 @@ appForm.models = function (module) {
     var photoOptions = {
       "targetWidth" : null,
       "targetHeight" : null,
-      "quality" : null
+      "quality" : null,
+      "saveToPhotoAlbum": null,
+      "pictureSource": null,
+      "encodingType": null
     };
 
     var fieldDef = this.getFieldDefinition();
     photoOptions.targetWidth = fieldDef.photoWidth;
     photoOptions.targetHeight = fieldDef.photoHeight;
     photoOptions.quality = fieldDef.photoQuality;
+    photoOptions.saveToPhotoAlbum = fieldDef.saveToPhotoAlbum;
+    photoOptions.pictureSource = fieldDef.photoSource;
+    photoOptions.encodingType = fieldDef.photoType;
+
     return photoOptions;
   };
   Field.prototype.isRepeating = function () {
@@ -16441,24 +16744,34 @@ appForm.models = function (module) {
     return this.get('_id', '');
   };
   Field.prototype.getName = function () {
-    return this.get('name', 'unknown name');
+    return this.get('name', 'unknown');
+  };
+  /**
+   * Function to return the Field Code specified in the studio if it exists
+   * otherwise return null.
+   */
+  Field.prototype.getCode = function(){
+    return this.get('fieldCode', null);
   };
   Field.prototype.getHelpText = function () {
     return this.get('helpText', '');
   };
 
+  /**
+     * return default value for a field
+     *
+  */
+  Field.prototype.getDefaultValue = function () {
+    var def = this.getFieldDefinition();
+    if (def) {
+      return def.defaultValue;
+    }
+    return "";
+  };
 
-/**
-   * return default value for a field
-   *
-*/
-Field.prototype.getDefaultValue = function () {
-  var def = this.getFieldDefinition();
-  if (def) {
-    return def.defaultValue;
-  }
-  return "";
-};
+  Field.prototype.isAdminField = function(){
+    return this.get("adminOnly");
+  };
 
 
   /**
@@ -16571,18 +16884,49 @@ appForm.models.Field = function (module) {
     var inputValue = params.value;
     var isStore = params.isStore === undefined ? true : params.isStore;
     var lastModDate = new Date().getTime();
+    var previousFile = params.previousFile || {};
+    var hashName = null;
     if (typeof inputValue === 'undefined' || inputValue === null) {
-      return cb(null, null);
+      return cb("No input value to process_file", null);
     }
-    if (typeof inputValue !== 'object' || !inputValue instanceof HTMLInputElement && !inputValue instanceof File && !checkFileObj(inputValue)) {
-      throw 'the input value for file field should be a html file input element or a File object';
+
+    function getFileType(fileType, fileNameString){
+      fileType = fileType || "";
+      fileNameString = fileNameString || "";
+
+      //The type if file is already known. No need to parse it out.
+      if(fileType.length > 0){
+        return fileType;
+      }
+
+      //Camera does not sent file type. Have to parse it from the file name.
+      if(fileNameString.indexOf(".png") > -1){
+        return "image/png";
+      } else if(fileNameString.indexOf(".jpg") > -1){
+        return "image/jpeg";
+      } else {
+        return "application/octet-stream";
+      }
     }
-    if (checkFileObj(inputValue)) {
-      return cb(null, inputValue);
+
+    function getFileName(fileNameString, filePathString){
+      fileNameString = fileNameString || "";
+      if(fileNameString.length > 0){
+        return fileNameString;
+      } else {
+        //Need to extract the name from the file path
+        var indexOfName = filePathString.lastIndexOf("/");
+        if(indexOfName > -1){
+          return filePathString.slice(indexOfName);
+        } else {
+          return null;
+        }
+      }
     }
+
     var file = inputValue;
     if (inputValue instanceof HTMLInputElement) {
-      file = inputValue.files[0];  // 1st file only, not support many files yet.
+      file = inputValue.files[0] || {};  // 1st file only, not support many files yet.
     }
 
     if(typeof(file.lastModifiedDate) === 'undefined'){
@@ -16590,35 +16934,62 @@ appForm.models.Field = function (module) {
     }
 
     if(file.lastModifiedDate instanceof Date){
-      lastModDate = file.lastModifiedDate.getTime();  
+      lastModDate = file.lastModifiedDate.getTime();
     }
+
+    var fileName = getFileName(file.name || file.fileName, file.fullPath);
+
+    var fileType = getFileType(file.type || file.fileType, fileName);
+
+    //Placeholder files do not have a file type. It inherits from previous types
+    if(fileName === null && !previousFile.fileName){
+      return cb("Expected picture to be PNG or JPEG but was null");
+    }
+
+    if(previousFile.hashName){
+      if(fileName === previousFile.hashName || file.hashName === previousFile.hashName){
+        //Submitting an existing file already saved, no need to save.
+        return cb(null, previousFile);
+      }
+    }
+
     var rtnJSON = {
-        'fileName': file.name,
-        'fileSize': file.size,
-        'fileType': file.type,
-        'fileUpdateTime': lastModDate,
-        'hashName': '',
-        'contentType': 'binary'
-      };
-    var name = file.name + new Date().getTime() + Math.ceil(Math.random() * 100000);
+      'fileName': fileName,
+      'fileSize': file.size,
+      'fileType': fileType,
+      'fileUpdateTime': lastModDate,
+      'hashName': '',
+      'imgHeader': '',
+      'contentType': 'binary'
+    };
+
+    //The file to be submitted is new
+    previousFile = rtnJSON;
+
+    var name = fileName + new Date().getTime() + Math.ceil(Math.random() * 100000);
     appForm.utils.md5(name, function (err, res) {
-      var hashName = res;
+      hashName = res;
       if (err) {
         hashName = name;
       }
       hashName = 'filePlaceHolder' + hashName;
-      rtnJSON.hashName = hashName;
+
+      if(fileName.length === 0){
+        previousFile.fileName = hashName;
+      }
+
+      previousFile.hashName = hashName;
       if (isStore) {
-        appForm.utils.fileSystem.save(hashName, file, function (err, res) {
+        appForm.stores.localStorage.saveFile(hashName, file, function (err, res) {
           if (err) {
             $fh.forms.log.e(err);
             cb(err);
           } else {
-            cb(null, rtnJSON);
+            cb(null, previousFile);
           }
         });
       } else {
-        cb(null, rtnJSON);
+        cb(null, previousFile);
       }
     });
   };
@@ -16714,25 +17085,32 @@ appForm.models.Field = function (module) {
   function checkFileObj(obj) {
     return obj.fileName && obj.fileType && obj.hashName;
   }
+
   function imageProcess(params, cb) {
+    var self = this;
     var inputValue = params.value;
     var isStore = params.isStore === undefined ? true : params.isStore;
+    var previousFile = params.previousFile || {};
     if (typeof(inputValue) !== "string") {
-      return cb("Expected base64 string image, but parameter was not a string", null);
+      return cb("Expected base64 string image or file URI but parameter was not a string", null);
     }
 
-    if(inputValue.length < 1 || inputValue.indexOf(";base64,") === -1){
-      return cb("Expected base64 string but got string " + inputValue, null);
+    //Input value can be either a base64 String or file uri, the behaviour of upload will change accordingly.
+
+    if(inputValue.length < 1){
+      return cb("Expected base64 string or file uri but got string of lenght 0:  " + inputValue, null);
     }
-    var imgName = '';
-    var dataArr = inputValue.split(';base64,');
-    var imgType = dataArr[0].split(':')[1];
-    var extension = imgType.split('/')[1];
-    var size = inputValue.length;
-    genImageName(function (err, n) {
-      imgName = params.filePlaceholder ? params.filePlaceholder : 'filePlaceHolder' + n;
-      //TODO Abstract this out
-      var meta = {
+
+    if(inputValue.indexOf(";base64,") > -1){
+      var imgName = '';
+      var dataArr = inputValue.split(';base64,');
+      var imgType = dataArr[0].split(':')[1];
+      var extension = imgType.split('/')[1];
+      var size = inputValue.length;
+      genImageName(function (err, n) {
+        imgName = previousFile.hashName ? previousFile.hashName : 'filePlaceHolder' + n;
+        //TODO Abstract this out
+        var meta = {
           'fileName': imgName + '.' + extension,
           'hashName': imgName,
           'contentType': 'base64',
@@ -16741,25 +17119,38 @@ appForm.models.Field = function (module) {
           'imgHeader': 'data:' + imgType + ';base64,',
           'fileUpdateTime': new Date().getTime()
         };
-      if (isStore) {
-        appForm.utils.fileSystem.save(imgName, dataArr[1], function (err, res) {
-          if (err) {
-            $fh.forms.log.e(err);
-            cb(err);
-          } else {
-            cb(null, meta);
-          }
-        });
-      } else {
-        cb(null, meta);
-      }
-    });
+        if (isStore) {
+          appForm.stores.localStorage.updateTextFile(imgName, dataArr[1], function (err, res) {
+            if (err) {
+              $fh.forms.log.e(err);
+              cb(err);
+            } else {
+              cb(null, meta);
+            }
+          });
+        } else {
+          cb(null, meta);
+        }
+      });
+    } else {
+      //Image is a file uri, the file needs to be saved as a file.
+      //Can use the process_file function to do this.
+      //Need to read the file as a file first
+      appForm.utils.fileSystem.readAsFile(inputValue, function(err, file){
+        if(err){
+          return cb(err);
+        }
+
+        params.value = file;
+        self.process_file(params, cb);
+      });
+    }
   }
   function genImageName(cb) {
     var name = new Date().getTime() + '' + Math.ceil(Math.random() * 100000);
     appForm.utils.md5(name, cb);
   }
-  function covertImage(value, cb) {
+  function convertImage(value, cb) {
     if (value.length === 0) {
       cb(null, value);
     } else {
@@ -16775,24 +17166,54 @@ appForm.models.Field = function (module) {
       }
     }
   }
+
+  //An image can be either a base64 image or a binary image.
+  //If base64, need to load the data as text.
+  //If binary, just need to load the file uri.
   function _loadImage(meta, cb) {
     if (meta) {
+
+      /**
+       * If the file already contains a local uri, then no need to load it.
+       */
+      if(meta.localURI){
+        return cb(null, meta);
+      }
+
       var name = meta.hashName;
-      appForm.utils.fileSystem.readAsText(name, function (err, text) {
-        if (err) {
-          $fh.forms.log.e(err);
-        }
-        meta.data = text;
-        cb(err, meta);
-      });
+      if(meta.contentType === "base64"){
+        appForm.stores.localStorage.readFileText(name, function (err, text) {
+          if (err) {
+            $fh.forms.log.e(err);
+          }
+          meta.data = text;
+          cb(err, meta);
+        });
+      } else if(meta.contentType === "binary"){
+        appForm.stores.localStorage.readFile(name, function(err, file){
+          if(err){
+            $fh.forms.log.e("Error reading file " + name, err);
+          }
+
+          if(file && file.fullPath){
+            meta.data = file.fullPath;
+          } else {
+            meta.data = "file-not-found";
+          }
+
+          cb(err, meta);
+        });
+      } else {
+        $fh.forms.log.e("Error load image with invalid meta" + meta.contentType);
+      }
     } else {
       cb(null, meta);
     }
   }
   module.prototype.process_signature = imageProcess;
-  module.prototype.convert_signature = covertImage;
+  module.prototype.convert_signature = convertImage;
   module.prototype.process_photo = imageProcess;
-  module.prototype.convert_photo = covertImage;
+  module.prototype.convert_photo = convertImage;
   return module;
 }(appForm.models.Field || {});
 /**
@@ -16869,17 +17290,19 @@ appForm.models = function (module) {
 
       if(insertSectionBreak && i === 0){ //Adding a first section.
         currentSection = "sectionBreak" + i;
-        sectionList[currentSection] = sectionList[currentSection] ? sectionList[currentSection] : [];
+        sectionList[currentSection] = sectionList[currentSection] ? sectionList[currentSection] : {fields: []};
+        sectionList[currentSection].title = "Section " + (i+1);
       }
 
       if(currentSection !== null && fieldModel.getType() !== "sectionBreak"){
-        sectionList[currentSection].push(fieldModel);
+        sectionList[currentSection].fields.push(fieldModel);
       }
 
       if(fieldModel.getType() === "sectionBreak"){
         currentSection = "sectionBreak" + i;
-        sectionList[currentSection] = sectionList[currentSection] ? sectionList[currentSection] : [];
-        sectionList[currentSection].push(fieldModel);
+        sectionList[currentSection] = sectionList[currentSection] ? sectionList[currentSection] : {fields: []};
+        sectionList[currentSection].title = fieldModel.get('name', "Section " + (i+1));
+        sectionList[currentSection].fields.push(fieldModel);
       }
     }
 
@@ -16944,37 +17367,44 @@ appForm.models = function (module) {
     var utId;
     var uploadTask = null;
     var self = this;
-    if (submissionModel.getUploadTaskId()) {
-      utId = submissionModel.getUploadTaskId();
-    } else {
-      uploadTask = appForm.models.uploadTask.newInstance(submissionModel);
-      utId = uploadTask.getLocalId();
-    }
-    self.push(utId);
-    if (!self.timer) {
-      $fh.forms.log.d("Starting timer for uploadManager");
-      self.start();
-    }
-    if (uploadTask) {
-      uploadTask.saveLocal(function (err) {
-        if (err) {
-          $fh.forms.log.e(err);
+
+    self.checkOnlineStatus(function(){
+      if($fh.forms.config.isOnline()){
+        if (submissionModel.getUploadTaskId()) {
+          utId = submissionModel.getUploadTaskId();
+        } else {
+          uploadTask = appForm.models.uploadTask.newInstance(submissionModel);
+          utId = uploadTask.getLocalId();
         }
-        self.saveLocal(function (err) {
-          if (err) {
-            $fh.forms.log.e("Error saving upload manager: " + err);
-          }
-          cb(null, uploadTask);
-        });
-      });
-    } else {
-      self.saveLocal(function (err) {
-        if (err) {
-          $fh.forms.log.e("Error saving upload manager: " + err);
+        self.push(utId);
+        if (!self.timer) {
+          $fh.forms.log.d("Starting timer for uploadManager");
+          self.start();
         }
-        self.getTaskById(utId, cb);
-      });
-    }
+        if (uploadTask) {
+          uploadTask.saveLocal(function (err) {
+            if (err) {
+              $fh.forms.log.e(err);
+            }
+            self.saveLocal(function (err) {
+              if (err) {
+                $fh.forms.log.e("Error saving upload manager: " + err);
+              }
+              cb(null, uploadTask);
+            });
+          });
+        } else {
+          self.saveLocal(function (err) {
+            if (err) {
+              $fh.forms.log.e("Error saving upload manager: " + err);
+            }
+            self.getTaskById(utId, cb);
+          });
+        }
+      } else {
+        return cb("Working offline cannot submit form.");
+      }
+    });
   };
 
   /**
@@ -17376,6 +17806,22 @@ appForm.models = function (module) {
   UploadTask.prototype.isStarted = function () {
     return this.getCurrentTask() === null ? false : true;
   };
+
+
+  UploadTask.prototype.setSubmissionQueued = function(cb){
+    var self = this;
+    self.submissionModel(function(err, submission){
+      if(err){
+        return cb(err);
+      }
+
+      if(self.get("submissionId")){
+        submission.setRemoteSubmissionId(self.get("submissionId"));
+      }
+
+      submission.queued(cb);
+    });
+  };
   /**
    * upload/download form submission
    * @param  {Function} cb [description]
@@ -17395,14 +17841,17 @@ appForm.models = function (module) {
         // form data submitted successfully.
         formSub.lastUpdate = appForm.utils.getTime();
         self.set('submissionId', submissionId);
-        self.increProgress();
-        self.saveLocal(function (err) {
-          if (err) {
-            $fh.forms.log.e("Error saving uploadTask to local storage" + err);
-          }
+
+        self.setSubmissionQueued(function(err){
+          self.increProgress();
+          self.saveLocal(function (err) {
+            if (err) {
+              $fh.forms.log.e("Error saving uploadTask to local storage" + err);
+            }
+          });
+          self.emit('progress', self.getProgress());
+          return cb(null);
         });
-        self.emit('progress', self.getProgress());
-        return cb(null);
       }
     }
 
@@ -17785,7 +18234,7 @@ appForm.models = function (module) {
             cb(err);
           } else {
             var status = submission.get('status');
-            if (status !== 'inprogress' && status !== 'submitted' && status !== 'downloaded') {
+            if (status !== 'inprogress' && status !== 'submitted' && status !== 'downloaded' && status !== 'queued') {
               $fh.forms.log.e('Submission status is incorrect. Upload task should be started by submission object\'s upload method.' + status);
               cb('Submission status is incorrect. Upload task should be started by submission object\'s upload method.');
             } else {
@@ -17870,13 +18319,9 @@ appForm.models = function (module) {
     var self = this;
     var submissionId = self.get('submissionId', null);
     self.set('completed', true);
-    self.saveLocal(function (err) {
-      if (err) {
-        $fh.forms.log.e("Error Clearing Upload Task");
-      }
-    });
+    
 
-    function processUploadSuccess(){
+    function processUploadSuccess(cb){
       $fh.forms.log.d("processUploadSuccess Called");
       self.submissionModel(function (_err, model) {
         if(_err){
@@ -17887,7 +18332,7 @@ appForm.models = function (module) {
       });
     }
 
-    function processDownloadSuccess(){
+    function processDownloadSuccess(cb){
       $fh.forms.log.d("processDownloadSuccess Called");
       self.submissionModel(function (_err, model) {
         if(_err){
@@ -17899,16 +18344,20 @@ appForm.models = function (module) {
       });
     }
 
-    if(self.isDownloadTask()){
-      processDownloadSuccess();
-    } else {
-      processUploadSuccess();
-    }
+    self.saveLocal(function (err) {
+      if (err) {
+        $fh.forms.log.e("Error Clearing Upload Task");
+      }
 
-    self.clearLocal(function(err){
-      if(err){
-        $fh.forms.log.e("Error clearing upload task local storage: ", err);
-      }      
+      if(self.isDownloadTask()){
+        processDownloadSuccess(function(err){
+          self.clearLocal(cb);
+        });
+      } else {
+        processUploadSuccess(function(err){
+          self.clearLocal(cb);
+        });
+      }
     });
   };
   /**
@@ -17917,30 +18366,33 @@ appForm.models = function (module) {
    * @param  {Function} cb  [description]
    * @return {[type]}       [description]
    */
-  UploadTask.prototype.error = function (err, cb) {
+  UploadTask.prototype.error = function (uploadErrorMessage, cb) {
     var self = this;
-    this.set('error', err);
-    this.saveLocal(function (err) {
+    $fh.forms.log.e("Error uploading submission: ", uploadErrorMessage);
+    self.set('error', uploadErrorMessage);
+    self.saveLocal(function (err) {
       if (err) {
         $fh.forms.log.e('Upload task save failed: ' + err);
       }
-    });
-    this.submissionModel(function (_err, model) {
-      if (_err) {
-        cb(_err);
-      } else {
-        model.error(err, function (err) {
-          if(err){
-            $fh.forms.log.e("Error updating submission model to error status ", err);
-          }
-        });
-        self.clearLocal(function(err){
-          if(err){
-            $fh.forms.log.e("Error clearing upload task local storage: ", err);
-          }      
-        });
-        cb(err);
-      }
+
+      self.submissionModel(function (_err, model) {
+        if (_err) {
+          cb(_err);
+        } else {
+          model.setUploadTaskId(null);
+          model.error(uploadErrorMessage, function (err) {
+            if(err){
+              $fh.forms.log.e("Error updating submission model to error status ", err);
+            } 
+            self.clearLocal(function(err){
+              if(err){
+                $fh.forms.log.e("Error clearing upload task local storage: ", err);
+              }  
+              cb(err);    
+            });
+          });
+        }
+      });
     });
   };
   UploadTask.prototype.isFormCompleted = function () {
@@ -18127,37 +18579,7 @@ appForm.models = (function(module) {
     var finalMsg = dateStr + " " + levelString.toUpperCase() + " " + msg;
     return finalMsg;
   };
-  Log.prototype.getPolishedLogs = function() {
-    var arr = [];
-    var logs = this.getLogs();
-    var patterns = [{
-      reg: /^.+\sERROR\s.*/,
-      color: $fh.forms.config.get('color_error') || "#FF0000"
-    }, {
-      reg: /^.+\sWARNING\s.*/,
-      color: $fh.forms.config.get('color_warning') || "#FF9933"
-    }, {
-      reg: /^.+\sLOG\s.*/,
-      color: $fh.forms.config.get('color_log') || "#009900"
-    }, {
-      reg: /^.+\sDEBUG\s.*/,
-      color: $fh.forms.config.get('color_debug') || "#3366FF"
-    }, {
-      reg: /^.+\sUNKNOWN\s.*/,
-      color: $fh.forms.config.get('color_unknown') || "#000000"
-    }];
-    for (var i = 0; i < logs.length; i++) {
-      var log = logs[i];
-      for (var j = 0; j < patterns.length; j++) {
-        var p = patterns[j];
-        if (p.reg.test(log)) {
-          arr.unshift("<div style='color:" + p.color + ";'>" + log + "</div>");
-          break;
-        }
-      }
-    }
-    return arr;
-  };
+  
   Log.prototype.write = function(cb) {
     var self = this;
     self.isWriting = true;
@@ -18261,7 +18683,7 @@ appForm.api = function (module) {
     },
     "set" : function(key, val){
       var self = this;
-      if(!key || !val){
+      if(typeof(key) !== "string" || typeof(val) === "undefined" || val === null){
         return;
       }
 
@@ -18326,6 +18748,9 @@ appForm.api = function (module) {
     },
     "isStudioMode": function(){
       return formConfig.isStudioMode();
+    },
+    refresh: function(cb){
+      formConfig.refresh(true, cb);
     }
   };
 
@@ -18521,7 +18946,7 @@ appForm.api = function (module) {
           $fh.forms.log.d("downloadSubmission submission exists", params);
 
           //Submission was created, but not finished downloading
-          if (submissionAlreadySaved.status !== "downloaded") {
+          if (submissionAlreadySaved.status !== "downloaded" && submissionAlreadySaved.status !== "submitted") {
             if(typeof(cb) === "function"){
               if(waitOnSubmission[params.submissionId]){
                 waitOnSubmission[params.submissionId].push(cb);  
@@ -18549,9 +18974,9 @@ if (typeof $fh === 'undefined') {
 if ($fh.forms === undefined) {
   $fh.forms = appForm.api;
 }
-/*! fh-forms - v0.5.16 -  */
+/*! fh-forms - v0.8.00 -  */
 /*! async - v0.2.9 -  */
-/*! 2014-05-20 */
+/*! 2014-08-27 */
 /* This is the prefix file */
 if(appForm){
   appForm.RulesEngine=rulesEngine;
@@ -18560,11 +18985,11 @@ if(appForm){
 function rulesEngine (formDef) {
   var define = {};
   var module = {exports:{}}; // create a module.exports - async will load into it
-/* jshint ignore:start */
-/* End of prefix file */
+  /* jshint ignore:start */
+  /* End of prefix file */
 
-/*global setImmediate: false, setTimeout: false, console: false */
-(function () {
+  /*global setImmediate: false, setTimeout: false, console: false */
+  (function () {
 
     var async = {};
 
@@ -18577,244 +19002,244 @@ function rulesEngine (formDef) {
     }
 
     async.noConflict = function () {
-        root.async = previous_async;
-        return async;
+      root.async = previous_async;
+      return async;
     };
 
     function only_once(fn) {
-        var called = false;
-        return function() {
-            if (called) throw new Error("Callback was already called.");
-            called = true;
-            fn.apply(root, arguments);
-        }
+      var called = false;
+      return function() {
+        if (called) throw new Error("Callback was already called.");
+        called = true;
+        fn.apply(root, arguments);
+      }
     }
 
     //// cross-browser compatiblity functions ////
 
     var _each = function (arr, iterator) {
-        if (arr.forEach) {
-            return arr.forEach(iterator);
-        }
-        for (var i = 0; i < arr.length; i += 1) {
-            iterator(arr[i], i, arr);
-        }
+      if (arr.forEach) {
+        return arr.forEach(iterator);
+      }
+      for (var i = 0; i < arr.length; i += 1) {
+        iterator(arr[i], i, arr);
+      }
     };
 
     var _map = function (arr, iterator) {
-        if (arr.map) {
-            return arr.map(iterator);
-        }
-        var results = [];
-        _each(arr, function (x, i, a) {
-            results.push(iterator(x, i, a));
-        });
-        return results;
+      if (arr.map) {
+        return arr.map(iterator);
+      }
+      var results = [];
+      _each(arr, function (x, i, a) {
+        results.push(iterator(x, i, a));
+      });
+      return results;
     };
 
     var _reduce = function (arr, iterator, memo) {
-        if (arr.reduce) {
-            return arr.reduce(iterator, memo);
-        }
-        _each(arr, function (x, i, a) {
-            memo = iterator(memo, x, i, a);
-        });
-        return memo;
+      if (arr.reduce) {
+        return arr.reduce(iterator, memo);
+      }
+      _each(arr, function (x, i, a) {
+        memo = iterator(memo, x, i, a);
+      });
+      return memo;
     };
 
     var _keys = function (obj) {
-        if (Object.keys) {
-            return Object.keys(obj);
+      if (Object.keys) {
+        return Object.keys(obj);
+      }
+      var keys = [];
+      for (var k in obj) {
+        if (obj.hasOwnProperty(k)) {
+          keys.push(k);
         }
-        var keys = [];
-        for (var k in obj) {
-            if (obj.hasOwnProperty(k)) {
-                keys.push(k);
-            }
-        }
-        return keys;
+      }
+      return keys;
     };
 
     //// exported async module functions ////
 
     //// nextTick implementation with browser-compatible fallback ////
     if (typeof process === 'undefined' || !(process.nextTick)) {
-        if (typeof setImmediate === 'function') {
-            async.nextTick = function (fn) {
-                // not a direct alias for IE10 compatibility
-                setImmediate(fn);
-            };
-            async.setImmediate = async.nextTick;
-        }
-        else {
-            async.nextTick = function (fn) {
-                setTimeout(fn, 0);
-            };
-            async.setImmediate = async.nextTick;
-        }
+      if (typeof setImmediate === 'function') {
+        async.nextTick = function (fn) {
+          // not a direct alias for IE10 compatibility
+          setImmediate(fn);
+        };
+        async.setImmediate = async.nextTick;
+      }
+      else {
+        async.nextTick = function (fn) {
+          setTimeout(fn, 0);
+        };
+        async.setImmediate = async.nextTick;
+      }
     }
     else {
-        async.nextTick = process.nextTick;
-        if (typeof setImmediate !== 'undefined') {
-            async.setImmediate = setImmediate;
-        }
-        else {
-            async.setImmediate = async.nextTick;
-        }
+      async.nextTick = process.nextTick;
+      if (typeof setImmediate !== 'undefined') {
+        async.setImmediate = setImmediate;
+      }
+      else {
+        async.setImmediate = async.nextTick;
+      }
     }
 
     async.each = function (arr, iterator, callback) {
-        callback = callback || function () {};
-        if (!arr.length) {
-            return callback();
-        }
-        var completed = 0;
-        _each(arr, function (x) {
-            iterator(x, only_once(function (err) {
-                if (err) {
-                    callback(err);
-                    callback = function () {};
-                }
-                else {
-                    completed += 1;
-                    if (completed >= arr.length) {
-                        callback(null);
-                    }
-                }
-            }));
-        });
+      callback = callback || function () {};
+      if (!arr.length) {
+        return callback();
+      }
+      var completed = 0;
+      _each(arr, function (x) {
+        iterator(x, only_once(function (err) {
+          if (err) {
+            callback(err);
+            callback = function () {};
+          }
+          else {
+            completed += 1;
+            if (completed >= arr.length) {
+              callback(null);
+            }
+          }
+        }));
+      });
     };
     async.forEach = async.each;
 
     async.eachSeries = function (arr, iterator, callback) {
-        callback = callback || function () {};
-        if (!arr.length) {
-            return callback();
-        }
-        var completed = 0;
-        var iterate = function () {
-            iterator(arr[completed], function (err) {
-                if (err) {
-                    callback(err);
-                    callback = function () {};
-                }
-                else {
-                    completed += 1;
-                    if (completed >= arr.length) {
-                        callback(null);
-                    }
-                    else {
-                        iterate();
-                    }
-                }
-            });
-        };
-        iterate();
+      callback = callback || function () {};
+      if (!arr.length) {
+        return callback();
+      }
+      var completed = 0;
+      var iterate = function () {
+        iterator(arr[completed], function (err) {
+          if (err) {
+            callback(err);
+            callback = function () {};
+          }
+          else {
+            completed += 1;
+            if (completed >= arr.length) {
+              callback(null);
+            }
+            else {
+              iterate();
+            }
+          }
+        });
+      };
+      iterate();
     };
     async.forEachSeries = async.eachSeries;
 
     async.eachLimit = function (arr, limit, iterator, callback) {
-        var fn = _eachLimit(limit);
-        fn.apply(null, [arr, iterator, callback]);
+      var fn = _eachLimit(limit);
+      fn.apply(null, [arr, iterator, callback]);
     };
     async.forEachLimit = async.eachLimit;
 
     var _eachLimit = function (limit) {
 
-        return function (arr, iterator, callback) {
-            callback = callback || function () {};
-            if (!arr.length || limit <= 0) {
-                return callback();
-            }
-            var completed = 0;
-            var started = 0;
-            var running = 0;
+      return function (arr, iterator, callback) {
+        callback = callback || function () {};
+        if (!arr.length || limit <= 0) {
+          return callback();
+        }
+        var completed = 0;
+        var started = 0;
+        var running = 0;
 
-            (function replenish () {
+        (function replenish () {
+          if (completed >= arr.length) {
+            return callback();
+          }
+
+          while (running < limit && started < arr.length) {
+            started += 1;
+            running += 1;
+            iterator(arr[started - 1], function (err) {
+              if (err) {
+                callback(err);
+                callback = function () {};
+              }
+              else {
+                completed += 1;
+                running -= 1;
                 if (completed >= arr.length) {
-                    return callback();
+                  callback();
                 }
-
-                while (running < limit && started < arr.length) {
-                    started += 1;
-                    running += 1;
-                    iterator(arr[started - 1], function (err) {
-                        if (err) {
-                            callback(err);
-                            callback = function () {};
-                        }
-                        else {
-                            completed += 1;
-                            running -= 1;
-                            if (completed >= arr.length) {
-                                callback();
-                            }
-                            else {
-                                replenish();
-                            }
-                        }
-                    });
+                else {
+                  replenish();
                 }
-            })();
-        };
+              }
+            });
+          }
+        })();
+      };
     };
 
 
     var doParallel = function (fn) {
-        return function () {
-            var args = Array.prototype.slice.call(arguments);
-            return fn.apply(null, [async.each].concat(args));
-        };
+      return function () {
+        var args = Array.prototype.slice.call(arguments);
+        return fn.apply(null, [async.each].concat(args));
+      };
     };
     var doParallelLimit = function(limit, fn) {
-        return function () {
-            var args = Array.prototype.slice.call(arguments);
-            return fn.apply(null, [_eachLimit(limit)].concat(args));
-        };
+      return function () {
+        var args = Array.prototype.slice.call(arguments);
+        return fn.apply(null, [_eachLimit(limit)].concat(args));
+      };
     };
     var doSeries = function (fn) {
-        return function () {
-            var args = Array.prototype.slice.call(arguments);
-            return fn.apply(null, [async.eachSeries].concat(args));
-        };
+      return function () {
+        var args = Array.prototype.slice.call(arguments);
+        return fn.apply(null, [async.eachSeries].concat(args));
+      };
     };
 
 
     var _asyncMap = function (eachfn, arr, iterator, callback) {
-        var results = [];
-        arr = _map(arr, function (x, i) {
-            return {index: i, value: x};
+      var results = [];
+      arr = _map(arr, function (x, i) {
+        return {index: i, value: x};
+      });
+      eachfn(arr, function (x, callback) {
+        iterator(x.value, function (err, v) {
+          results[x.index] = v;
+          callback(err);
         });
-        eachfn(arr, function (x, callback) {
-            iterator(x.value, function (err, v) {
-                results[x.index] = v;
-                callback(err);
-            });
-        }, function (err) {
-            callback(err, results);
-        });
+      }, function (err) {
+        callback(err, results);
+      });
     };
     async.map = doParallel(_asyncMap);
     async.mapSeries = doSeries(_asyncMap);
     async.mapLimit = function (arr, limit, iterator, callback) {
-        return _mapLimit(limit)(arr, iterator, callback);
+      return _mapLimit(limit)(arr, iterator, callback);
     };
 
     var _mapLimit = function(limit) {
-        return doParallelLimit(limit, _asyncMap);
+      return doParallelLimit(limit, _asyncMap);
     };
 
     // reduce only has a series version, as doing reduce in parallel won't
     // work in many situations.
     async.reduce = function (arr, memo, iterator, callback) {
-        async.eachSeries(arr, function (x, callback) {
-            iterator(memo, x, function (err, v) {
-                memo = v;
-                callback(err);
-            });
-        }, function (err) {
-            callback(err, memo);
+      async.eachSeries(arr, function (x, callback) {
+        iterator(memo, x, function (err, v) {
+          memo = v;
+          callback(err);
         });
+      }, function (err) {
+        callback(err, memo);
+      });
     };
     // inject alias
     async.inject = async.reduce;
@@ -18822,33 +19247,33 @@ function rulesEngine (formDef) {
     async.foldl = async.reduce;
 
     async.reduceRight = function (arr, memo, iterator, callback) {
-        var reversed = _map(arr, function (x) {
-            return x;
-        }).reverse();
-        async.reduce(reversed, memo, iterator, callback);
+      var reversed = _map(arr, function (x) {
+        return x;
+      }).reverse();
+      async.reduce(reversed, memo, iterator, callback);
     };
     // foldr alias
     async.foldr = async.reduceRight;
 
     var _filter = function (eachfn, arr, iterator, callback) {
-        var results = [];
-        arr = _map(arr, function (x, i) {
-            return {index: i, value: x};
+      var results = [];
+      arr = _map(arr, function (x, i) {
+        return {index: i, value: x};
+      });
+      eachfn(arr, function (x, callback) {
+        iterator(x.value, function (v) {
+          if (v) {
+            results.push(x);
+          }
+          callback();
         });
-        eachfn(arr, function (x, callback) {
-            iterator(x.value, function (v) {
-                if (v) {
-                    results.push(x);
-                }
-                callback();
-            });
-        }, function (err) {
-            callback(_map(results.sort(function (a, b) {
-                return a.index - b.index;
-            }), function (x) {
-                return x.value;
-            }));
-        });
+      }, function (err) {
+        callback(_map(results.sort(function (a, b) {
+          return a.index - b.index;
+        }), function (x) {
+          return x.value;
+        }));
+      });
     };
     async.filter = doParallel(_filter);
     async.filterSeries = doSeries(_filter);
@@ -18857,574 +19282,574 @@ function rulesEngine (formDef) {
     async.selectSeries = async.filterSeries;
 
     var _reject = function (eachfn, arr, iterator, callback) {
-        var results = [];
-        arr = _map(arr, function (x, i) {
-            return {index: i, value: x};
+      var results = [];
+      arr = _map(arr, function (x, i) {
+        return {index: i, value: x};
+      });
+      eachfn(arr, function (x, callback) {
+        iterator(x.value, function (v) {
+          if (!v) {
+            results.push(x);
+          }
+          callback();
         });
-        eachfn(arr, function (x, callback) {
-            iterator(x.value, function (v) {
-                if (!v) {
-                    results.push(x);
-                }
-                callback();
-            });
-        }, function (err) {
-            callback(_map(results.sort(function (a, b) {
-                return a.index - b.index;
-            }), function (x) {
-                return x.value;
-            }));
-        });
+      }, function (err) {
+        callback(_map(results.sort(function (a, b) {
+          return a.index - b.index;
+        }), function (x) {
+          return x.value;
+        }));
+      });
     };
     async.reject = doParallel(_reject);
     async.rejectSeries = doSeries(_reject);
 
     var _detect = function (eachfn, arr, iterator, main_callback) {
-        eachfn(arr, function (x, callback) {
-            iterator(x, function (result) {
-                if (result) {
-                    main_callback(x);
-                    main_callback = function () {};
-                }
-                else {
-                    callback();
-                }
-            });
-        }, function (err) {
-            main_callback();
+      eachfn(arr, function (x, callback) {
+        iterator(x, function (result) {
+          if (result) {
+            main_callback(x);
+            main_callback = function () {};
+          }
+          else {
+            callback();
+          }
         });
+      }, function (err) {
+        main_callback();
+      });
     };
     async.detect = doParallel(_detect);
     async.detectSeries = doSeries(_detect);
 
     async.some = function (arr, iterator, main_callback) {
-        async.each(arr, function (x, callback) {
-            iterator(x, function (v) {
-                if (v) {
-                    main_callback(true);
-                    main_callback = function () {};
-                }
-                callback();
-            });
-        }, function (err) {
-            main_callback(false);
+      async.each(arr, function (x, callback) {
+        iterator(x, function (v) {
+          if (v) {
+            main_callback(true);
+            main_callback = function () {};
+          }
+          callback();
         });
+      }, function (err) {
+        main_callback(false);
+      });
     };
     // any alias
     async.any = async.some;
 
     async.every = function (arr, iterator, main_callback) {
-        async.each(arr, function (x, callback) {
-            iterator(x, function (v) {
-                if (!v) {
-                    main_callback(false);
-                    main_callback = function () {};
-                }
-                callback();
-            });
-        }, function (err) {
-            main_callback(true);
+      async.each(arr, function (x, callback) {
+        iterator(x, function (v) {
+          if (!v) {
+            main_callback(false);
+            main_callback = function () {};
+          }
+          callback();
         });
+      }, function (err) {
+        main_callback(true);
+      });
     };
     // all alias
     async.all = async.every;
 
     async.sortBy = function (arr, iterator, callback) {
-        async.map(arr, function (x, callback) {
-            iterator(x, function (err, criteria) {
-                if (err) {
-                    callback(err);
-                }
-                else {
-                    callback(null, {value: x, criteria: criteria});
-                }
-            });
-        }, function (err, results) {
-            if (err) {
-                return callback(err);
-            }
-            else {
-                var fn = function (left, right) {
-                    var a = left.criteria, b = right.criteria;
-                    return a < b ? -1 : a > b ? 1 : 0;
-                };
-                callback(null, _map(results.sort(fn), function (x) {
-                    return x.value;
-                }));
-            }
+      async.map(arr, function (x, callback) {
+        iterator(x, function (err, criteria) {
+          if (err) {
+            callback(err);
+          }
+          else {
+            callback(null, {value: x, criteria: criteria});
+          }
         });
+      }, function (err, results) {
+        if (err) {
+          return callback(err);
+        }
+        else {
+          var fn = function (left, right) {
+            var a = left.criteria, b = right.criteria;
+            return a < b ? -1 : a > b ? 1 : 0;
+          };
+          callback(null, _map(results.sort(fn), function (x) {
+            return x.value;
+          }));
+        }
+      });
     };
 
     async.auto = function (tasks, callback) {
-        callback = callback || function () {};
-        var keys = _keys(tasks);
-        if (!keys.length) {
-            return callback(null);
+      callback = callback || function () {};
+      var keys = _keys(tasks);
+      if (!keys.length) {
+        return callback(null);
+      }
+
+      var results = {};
+
+      var listeners = [];
+      var addListener = function (fn) {
+        listeners.unshift(fn);
+      };
+      var removeListener = function (fn) {
+        for (var i = 0; i < listeners.length; i += 1) {
+          if (listeners[i] === fn) {
+            listeners.splice(i, 1);
+            return;
+          }
         }
+      };
+      var taskComplete = function () {
+        _each(listeners.slice(0), function (fn) {
+          fn();
+        });
+      };
 
-        var results = {};
+      addListener(function () {
+        if (_keys(results).length === keys.length) {
+          callback(null, results);
+          callback = function () {};
+        }
+      });
 
-        var listeners = [];
-        var addListener = function (fn) {
-            listeners.unshift(fn);
-        };
-        var removeListener = function (fn) {
-            for (var i = 0; i < listeners.length; i += 1) {
-                if (listeners[i] === fn) {
-                    listeners.splice(i, 1);
-                    return;
-                }
-            }
-        };
-        var taskComplete = function () {
-            _each(listeners.slice(0), function (fn) {
-                fn();
+      _each(keys, function (k) {
+        var task = (tasks[k] instanceof Function) ? [tasks[k]]: tasks[k];
+        var taskCallback = function (err) {
+          var args = Array.prototype.slice.call(arguments, 1);
+          if (args.length <= 1) {
+            args = args[0];
+          }
+          if (err) {
+            var safeResults = {};
+            _each(_keys(results), function(rkey) {
+              safeResults[rkey] = results[rkey];
             });
+            safeResults[k] = args;
+            callback(err, safeResults);
+            // stop subsequent errors hitting callback multiple times
+            callback = function () {};
+          }
+          else {
+            results[k] = args;
+            async.setImmediate(taskComplete);
+          }
         };
-
-        addListener(function () {
-            if (_keys(results).length === keys.length) {
-                callback(null, results);
-                callback = function () {};
-            }
-        });
-
-        _each(keys, function (k) {
-            var task = (tasks[k] instanceof Function) ? [tasks[k]]: tasks[k];
-            var taskCallback = function (err) {
-                var args = Array.prototype.slice.call(arguments, 1);
-                if (args.length <= 1) {
-                    args = args[0];
-                }
-                if (err) {
-                    var safeResults = {};
-                    _each(_keys(results), function(rkey) {
-                        safeResults[rkey] = results[rkey];
-                    });
-                    safeResults[k] = args;
-                    callback(err, safeResults);
-                    // stop subsequent errors hitting callback multiple times
-                    callback = function () {};
-                }
-                else {
-                    results[k] = args;
-                    async.setImmediate(taskComplete);
-                }
-            };
-            var requires = task.slice(0, Math.abs(task.length - 1)) || [];
-            var ready = function () {
-                return _reduce(requires, function (a, x) {
-                    return (a && results.hasOwnProperty(x));
-                }, true) && !results.hasOwnProperty(k);
-            };
+        var requires = task.slice(0, Math.abs(task.length - 1)) || [];
+        var ready = function () {
+          return _reduce(requires, function (a, x) {
+            return (a && results.hasOwnProperty(x));
+          }, true) && !results.hasOwnProperty(k);
+        };
+        if (ready()) {
+          task[task.length - 1](taskCallback, results);
+        }
+        else {
+          var listener = function () {
             if (ready()) {
-                task[task.length - 1](taskCallback, results);
+              removeListener(listener);
+              task[task.length - 1](taskCallback, results);
             }
-            else {
-                var listener = function () {
-                    if (ready()) {
-                        removeListener(listener);
-                        task[task.length - 1](taskCallback, results);
-                    }
-                };
-                addListener(listener);
-            }
-        });
+          };
+          addListener(listener);
+        }
+      });
     };
 
     async.waterfall = function (tasks, callback) {
-        callback = callback || function () {};
-        if (tasks.constructor !== Array) {
-          var err = new Error('First argument to waterfall must be an array of functions');
-          return callback(err);
-        }
-        if (!tasks.length) {
-            return callback();
-        }
-        var wrapIterator = function (iterator) {
-            return function (err) {
-                if (err) {
-                    callback.apply(null, arguments);
-                    callback = function () {};
-                }
-                else {
-                    var args = Array.prototype.slice.call(arguments, 1);
-                    var next = iterator.next();
-                    if (next) {
-                        args.push(wrapIterator(next));
-                    }
-                    else {
-                        args.push(callback);
-                    }
-                    async.setImmediate(function () {
-                        iterator.apply(null, args);
-                    });
-                }
-            };
+      callback = callback || function () {};
+      if (tasks.constructor !== Array) {
+        var err = new Error('First argument to waterfall must be an array of functions');
+        return callback(err);
+      }
+      if (!tasks.length) {
+        return callback();
+      }
+      var wrapIterator = function (iterator) {
+        return function (err) {
+          if (err) {
+            callback.apply(null, arguments);
+            callback = function () {};
+          }
+          else {
+            var args = Array.prototype.slice.call(arguments, 1);
+            var next = iterator.next();
+            if (next) {
+              args.push(wrapIterator(next));
+            }
+            else {
+              args.push(callback);
+            }
+            async.setImmediate(function () {
+              iterator.apply(null, args);
+            });
+          }
         };
-        wrapIterator(async.iterator(tasks))();
+      };
+      wrapIterator(async.iterator(tasks))();
     };
 
     var _parallel = function(eachfn, tasks, callback) {
-        callback = callback || function () {};
-        if (tasks.constructor === Array) {
-            eachfn.map(tasks, function (fn, callback) {
-                if (fn) {
-                    fn(function (err) {
-                        var args = Array.prototype.slice.call(arguments, 1);
-                        if (args.length <= 1) {
-                            args = args[0];
-                        }
-                        callback.call(null, err, args);
-                    });
-                }
-            }, callback);
-        }
-        else {
-            var results = {};
-            eachfn.each(_keys(tasks), function (k, callback) {
-                tasks[k](function (err) {
-                    var args = Array.prototype.slice.call(arguments, 1);
-                    if (args.length <= 1) {
-                        args = args[0];
-                    }
-                    results[k] = args;
-                    callback(err);
-                });
-            }, function (err) {
-                callback(err, results);
+      callback = callback || function () {};
+      if (tasks.constructor === Array) {
+        eachfn.map(tasks, function (fn, callback) {
+          if (fn) {
+            fn(function (err) {
+              var args = Array.prototype.slice.call(arguments, 1);
+              if (args.length <= 1) {
+                args = args[0];
+              }
+              callback.call(null, err, args);
             });
-        }
+          }
+        }, callback);
+      }
+      else {
+        var results = {};
+        eachfn.each(_keys(tasks), function (k, callback) {
+          tasks[k](function (err) {
+            var args = Array.prototype.slice.call(arguments, 1);
+            if (args.length <= 1) {
+              args = args[0];
+            }
+            results[k] = args;
+            callback(err);
+          });
+        }, function (err) {
+          callback(err, results);
+        });
+      }
     };
 
     async.parallel = function (tasks, callback) {
-        _parallel({ map: async.map, each: async.each }, tasks, callback);
+      _parallel({ map: async.map, each: async.each }, tasks, callback);
     };
 
     async.parallelLimit = function(tasks, limit, callback) {
-        _parallel({ map: _mapLimit(limit), each: _eachLimit(limit) }, tasks, callback);
+      _parallel({ map: _mapLimit(limit), each: _eachLimit(limit) }, tasks, callback);
     };
 
     async.series = function (tasks, callback) {
-        callback = callback || function () {};
-        if (tasks.constructor === Array) {
-            async.mapSeries(tasks, function (fn, callback) {
-                if (fn) {
-                    fn(function (err) {
-                        var args = Array.prototype.slice.call(arguments, 1);
-                        if (args.length <= 1) {
-                            args = args[0];
-                        }
-                        callback.call(null, err, args);
-                    });
-                }
-            }, callback);
-        }
-        else {
-            var results = {};
-            async.eachSeries(_keys(tasks), function (k, callback) {
-                tasks[k](function (err) {
-                    var args = Array.prototype.slice.call(arguments, 1);
-                    if (args.length <= 1) {
-                        args = args[0];
-                    }
-                    results[k] = args;
-                    callback(err);
-                });
-            }, function (err) {
-                callback(err, results);
+      callback = callback || function () {};
+      if (tasks.constructor === Array) {
+        async.mapSeries(tasks, function (fn, callback) {
+          if (fn) {
+            fn(function (err) {
+              var args = Array.prototype.slice.call(arguments, 1);
+              if (args.length <= 1) {
+                args = args[0];
+              }
+              callback.call(null, err, args);
             });
-        }
+          }
+        }, callback);
+      }
+      else {
+        var results = {};
+        async.eachSeries(_keys(tasks), function (k, callback) {
+          tasks[k](function (err) {
+            var args = Array.prototype.slice.call(arguments, 1);
+            if (args.length <= 1) {
+              args = args[0];
+            }
+            results[k] = args;
+            callback(err);
+          });
+        }, function (err) {
+          callback(err, results);
+        });
+      }
     };
 
     async.iterator = function (tasks) {
-        var makeCallback = function (index) {
-            var fn = function () {
-                if (tasks.length) {
-                    tasks[index].apply(null, arguments);
-                }
-                return fn.next();
-            };
-            fn.next = function () {
-                return (index < tasks.length - 1) ? makeCallback(index + 1): null;
-            };
-            return fn;
+      var makeCallback = function (index) {
+        var fn = function () {
+          if (tasks.length) {
+            tasks[index].apply(null, arguments);
+          }
+          return fn.next();
         };
-        return makeCallback(0);
+        fn.next = function () {
+          return (index < tasks.length - 1) ? makeCallback(index + 1): null;
+        };
+        return fn;
+      };
+      return makeCallback(0);
     };
 
     async.apply = function (fn) {
-        var args = Array.prototype.slice.call(arguments, 1);
-        return function () {
-            return fn.apply(
-                null, args.concat(Array.prototype.slice.call(arguments))
-            );
-        };
+      var args = Array.prototype.slice.call(arguments, 1);
+      return function () {
+        return fn.apply(
+          null, args.concat(Array.prototype.slice.call(arguments))
+        );
+      };
     };
 
     var _concat = function (eachfn, arr, fn, callback) {
-        var r = [];
-        eachfn(arr, function (x, cb) {
-            fn(x, function (err, y) {
-                r = r.concat(y || []);
-                cb(err);
-            });
-        }, function (err) {
-            callback(err, r);
+      var r = [];
+      eachfn(arr, function (x, cb) {
+        fn(x, function (err, y) {
+          r = r.concat(y || []);
+          cb(err);
         });
+      }, function (err) {
+        callback(err, r);
+      });
     };
     async.concat = doParallel(_concat);
     async.concatSeries = doSeries(_concat);
 
     async.whilst = function (test, iterator, callback) {
-        if (test()) {
-            iterator(function (err) {
-                if (err) {
-                    return callback(err);
-                }
-                async.whilst(test, iterator, callback);
-            });
-        }
-        else {
-            callback();
-        }
+      if (test()) {
+        iterator(function (err) {
+          if (err) {
+            return callback(err);
+          }
+          async.whilst(test, iterator, callback);
+        });
+      }
+      else {
+        callback();
+      }
     };
 
     async.doWhilst = function (iterator, test, callback) {
-        iterator(function (err) {
-            if (err) {
-                return callback(err);
-            }
-            if (test()) {
-                async.doWhilst(iterator, test, callback);
-            }
-            else {
-                callback();
-            }
-        });
+      iterator(function (err) {
+        if (err) {
+          return callback(err);
+        }
+        if (test()) {
+          async.doWhilst(iterator, test, callback);
+        }
+        else {
+          callback();
+        }
+      });
     };
 
     async.until = function (test, iterator, callback) {
-        if (!test()) {
-            iterator(function (err) {
-                if (err) {
-                    return callback(err);
-                }
-                async.until(test, iterator, callback);
-            });
-        }
-        else {
-            callback();
-        }
+      if (!test()) {
+        iterator(function (err) {
+          if (err) {
+            return callback(err);
+          }
+          async.until(test, iterator, callback);
+        });
+      }
+      else {
+        callback();
+      }
     };
 
     async.doUntil = function (iterator, test, callback) {
-        iterator(function (err) {
-            if (err) {
-                return callback(err);
-            }
-            if (!test()) {
-                async.doUntil(iterator, test, callback);
-            }
-            else {
-                callback();
-            }
-        });
+      iterator(function (err) {
+        if (err) {
+          return callback(err);
+        }
+        if (!test()) {
+          async.doUntil(iterator, test, callback);
+        }
+        else {
+          callback();
+        }
+      });
     };
 
     async.queue = function (worker, concurrency) {
-        if (concurrency === undefined) {
-            concurrency = 1;
+      if (concurrency === undefined) {
+        concurrency = 1;
+      }
+      function _insert(q, data, pos, callback) {
+        if(data.constructor !== Array) {
+          data = [data];
         }
-        function _insert(q, data, pos, callback) {
-          if(data.constructor !== Array) {
-              data = [data];
+        _each(data, function(task) {
+          var item = {
+            data: task,
+            callback: typeof callback === 'function' ? callback : null
+          };
+
+          if (pos) {
+            q.tasks.unshift(item);
+          } else {
+            q.tasks.push(item);
           }
-          _each(data, function(task) {
-              var item = {
-                  data: task,
-                  callback: typeof callback === 'function' ? callback : null
-              };
 
-              if (pos) {
-                q.tasks.unshift(item);
-              } else {
-                q.tasks.push(item);
-              }
+          if (q.saturated && q.tasks.length === concurrency) {
+            q.saturated();
+          }
+          async.setImmediate(q.process);
+        });
+      }
 
-              if (q.saturated && q.tasks.length === concurrency) {
-                  q.saturated();
-              }
-              async.setImmediate(q.process);
-          });
-        }
-
-        var workers = 0;
-        var q = {
-            tasks: [],
-            concurrency: concurrency,
-            saturated: null,
-            empty: null,
-            drain: null,
-            push: function (data, callback) {
-              _insert(q, data, false, callback);
-            },
-            unshift: function (data, callback) {
-              _insert(q, data, true, callback);
-            },
-            process: function () {
-                if (workers < q.concurrency && q.tasks.length) {
-                    var task = q.tasks.shift();
-                    if (q.empty && q.tasks.length === 0) {
-                        q.empty();
-                    }
-                    workers += 1;
-                    var next = function () {
-                        workers -= 1;
-                        if (task.callback) {
-                            task.callback.apply(task, arguments);
-                        }
-                        if (q.drain && q.tasks.length + workers === 0) {
-                            q.drain();
-                        }
-                        q.process();
-                    };
-                    var cb = only_once(next);
-                    worker(task.data, cb);
-                }
-            },
-            length: function () {
-                return q.tasks.length;
-            },
-            running: function () {
-                return workers;
+      var workers = 0;
+      var q = {
+        tasks: [],
+        concurrency: concurrency,
+        saturated: null,
+        empty: null,
+        drain: null,
+        push: function (data, callback) {
+          _insert(q, data, false, callback);
+        },
+        unshift: function (data, callback) {
+          _insert(q, data, true, callback);
+        },
+        process: function () {
+          if (workers < q.concurrency && q.tasks.length) {
+            var task = q.tasks.shift();
+            if (q.empty && q.tasks.length === 0) {
+              q.empty();
             }
-        };
-        return q;
+            workers += 1;
+            var next = function () {
+              workers -= 1;
+              if (task.callback) {
+                task.callback.apply(task, arguments);
+              }
+              if (q.drain && q.tasks.length + workers === 0) {
+                q.drain();
+              }
+              q.process();
+            };
+            var cb = only_once(next);
+            worker(task.data, cb);
+          }
+        },
+        length: function () {
+          return q.tasks.length;
+        },
+        running: function () {
+          return workers;
+        }
+      };
+      return q;
     };
 
     async.cargo = function (worker, payload) {
-        var working     = false,
-            tasks       = [];
+      var working     = false,
+        tasks       = [];
 
-        var cargo = {
-            tasks: tasks,
-            payload: payload,
-            saturated: null,
-            empty: null,
-            drain: null,
-            push: function (data, callback) {
-                if(data.constructor !== Array) {
-                    data = [data];
-                }
-                _each(data, function(task) {
-                    tasks.push({
-                        data: task,
-                        callback: typeof callback === 'function' ? callback : null
-                    });
-                    if (cargo.saturated && tasks.length === payload) {
-                        cargo.saturated();
-                    }
-                });
-                async.setImmediate(cargo.process);
-            },
-            process: function process() {
-                if (working) return;
-                if (tasks.length === 0) {
-                    if(cargo.drain) cargo.drain();
-                    return;
-                }
-
-                var ts = typeof payload === 'number'
-                            ? tasks.splice(0, payload)
-                            : tasks.splice(0);
-
-                var ds = _map(ts, function (task) {
-                    return task.data;
-                });
-
-                if(cargo.empty) cargo.empty();
-                working = true;
-                worker(ds, function () {
-                    working = false;
-
-                    var args = arguments;
-                    _each(ts, function (data) {
-                        if (data.callback) {
-                            data.callback.apply(null, args);
-                        }
-                    });
-
-                    process();
-                });
-            },
-            length: function () {
-                return tasks.length;
-            },
-            running: function () {
-                return working;
+      var cargo = {
+        tasks: tasks,
+        payload: payload,
+        saturated: null,
+        empty: null,
+        drain: null,
+        push: function (data, callback) {
+          if(data.constructor !== Array) {
+            data = [data];
+          }
+          _each(data, function(task) {
+            tasks.push({
+              data: task,
+              callback: typeof callback === 'function' ? callback : null
+            });
+            if (cargo.saturated && tasks.length === payload) {
+              cargo.saturated();
             }
-        };
-        return cargo;
+          });
+          async.setImmediate(cargo.process);
+        },
+        process: function process() {
+          if (working) return;
+          if (tasks.length === 0) {
+            if(cargo.drain) cargo.drain();
+            return;
+          }
+
+          var ts = typeof payload === 'number'
+            ? tasks.splice(0, payload)
+            : tasks.splice(0);
+
+          var ds = _map(ts, function (task) {
+            return task.data;
+          });
+
+          if(cargo.empty) cargo.empty();
+          working = true;
+          worker(ds, function () {
+            working = false;
+
+            var args = arguments;
+            _each(ts, function (data) {
+              if (data.callback) {
+                data.callback.apply(null, args);
+              }
+            });
+
+            process();
+          });
+        },
+        length: function () {
+          return tasks.length;
+        },
+        running: function () {
+          return working;
+        }
+      };
+      return cargo;
     };
 
     var _console_fn = function (name) {
-        return function (fn) {
-            var args = Array.prototype.slice.call(arguments, 1);
-            fn.apply(null, args.concat([function (err) {
-                var args = Array.prototype.slice.call(arguments, 1);
-                if (typeof console !== 'undefined') {
-                    if (err) {
-                        if (console.error) {
-                            console.error(err);
-                        }
-                    }
-                    else if (console[name]) {
-                        _each(args, function (x) {
-                            console[name](x);
-                        });
-                    }
-                }
-            }]));
-        };
+      return function (fn) {
+        var args = Array.prototype.slice.call(arguments, 1);
+        fn.apply(null, args.concat([function (err) {
+          var args = Array.prototype.slice.call(arguments, 1);
+          if (typeof console !== 'undefined') {
+            if (err) {
+              if (console.error) {
+                console.error(err);
+              }
+            }
+            else if (console[name]) {
+              _each(args, function (x) {
+                console[name](x);
+              });
+            }
+          }
+        }]));
+      };
     };
     async.log = _console_fn('log');
     async.dir = _console_fn('dir');
     /*async.info = _console_fn('info');
-    async.warn = _console_fn('warn');
-    async.error = _console_fn('error');*/
+     async.warn = _console_fn('warn');
+     async.error = _console_fn('error');*/
 
     async.memoize = function (fn, hasher) {
-        var memo = {};
-        var queues = {};
-        hasher = hasher || function (x) {
-            return x;
-        };
-        var memoized = function () {
-            var args = Array.prototype.slice.call(arguments);
-            var callback = args.pop();
-            var key = hasher.apply(null, args);
-            if (key in memo) {
-                callback.apply(null, memo[key]);
+      var memo = {};
+      var queues = {};
+      hasher = hasher || function (x) {
+        return x;
+      };
+      var memoized = function () {
+        var args = Array.prototype.slice.call(arguments);
+        var callback = args.pop();
+        var key = hasher.apply(null, args);
+        if (key in memo) {
+          callback.apply(null, memo[key]);
+        }
+        else if (key in queues) {
+          queues[key].push(callback);
+        }
+        else {
+          queues[key] = [callback];
+          fn.apply(null, args.concat([function () {
+            memo[key] = arguments;
+            var q = queues[key];
+            delete queues[key];
+            for (var i = 0, l = q.length; i < l; i++) {
+              q[i].apply(null, arguments);
             }
-            else if (key in queues) {
-                queues[key].push(callback);
-            }
-            else {
-                queues[key] = [callback];
-                fn.apply(null, args.concat([function () {
-                    memo[key] = arguments;
-                    var q = queues[key];
-                    delete queues[key];
-                    for (var i = 0, l = q.length; i < l; i++) {
-                      q[i].apply(null, arguments);
-                    }
-                }]));
-            }
-        };
-        memoized.memo = memo;
-        memoized.unmemoized = fn;
-        return memoized;
+          }]));
+        }
+      };
+      memoized.memo = memo;
+      memoized.unmemoized = fn;
+      return memoized;
     };
 
     async.unmemoize = function (fn) {
@@ -19434,1323 +19859,145 @@ function rulesEngine (formDef) {
     };
 
     async.times = function (count, iterator, callback) {
-        var counter = [];
-        for (var i = 0; i < count; i++) {
-            counter.push(i);
-        }
-        return async.map(counter, iterator, callback);
+      var counter = [];
+      for (var i = 0; i < count; i++) {
+        counter.push(i);
+      }
+      return async.map(counter, iterator, callback);
     };
 
     async.timesSeries = function (count, iterator, callback) {
-        var counter = [];
-        for (var i = 0; i < count; i++) {
-            counter.push(i);
-        }
-        return async.mapSeries(counter, iterator, callback);
+      var counter = [];
+      for (var i = 0; i < count; i++) {
+        counter.push(i);
+      }
+      return async.mapSeries(counter, iterator, callback);
     };
 
     async.compose = function (/* functions... */) {
-        var fns = Array.prototype.reverse.call(arguments);
-        return function () {
-            var that = this;
-            var args = Array.prototype.slice.call(arguments);
-            var callback = args.pop();
-            async.reduce(fns, args, function (newargs, fn, cb) {
-                fn.apply(that, newargs.concat([function () {
-                    var err = arguments[0];
-                    var nextargs = Array.prototype.slice.call(arguments, 1);
-                    cb(err, nextargs);
-                }]))
-            },
-            function (err, results) {
-                callback.apply(that, [err].concat(results));
-            });
-        };
+      var fns = Array.prototype.reverse.call(arguments);
+      return function () {
+        var that = this;
+        var args = Array.prototype.slice.call(arguments);
+        var callback = args.pop();
+        async.reduce(fns, args, function (newargs, fn, cb) {
+            fn.apply(that, newargs.concat([function () {
+              var err = arguments[0];
+              var nextargs = Array.prototype.slice.call(arguments, 1);
+              cb(err, nextargs);
+            }]))
+          },
+          function (err, results) {
+            callback.apply(that, [err].concat(results));
+          });
+      };
     };
 
     var _applyEach = function (eachfn, fns /*args...*/) {
-        var go = function () {
-            var that = this;
-            var args = Array.prototype.slice.call(arguments);
-            var callback = args.pop();
-            return eachfn(fns, function (fn, cb) {
-                fn.apply(that, args.concat([cb]));
-            },
-            callback);
-        };
-        if (arguments.length > 2) {
-            var args = Array.prototype.slice.call(arguments, 2);
-            return go.apply(this, args);
-        }
-        else {
-            return go;
-        }
+      var go = function () {
+        var that = this;
+        var args = Array.prototype.slice.call(arguments);
+        var callback = args.pop();
+        return eachfn(fns, function (fn, cb) {
+            fn.apply(that, args.concat([cb]));
+          },
+          callback);
+      };
+      if (arguments.length > 2) {
+        var args = Array.prototype.slice.call(arguments, 2);
+        return go.apply(this, args);
+      }
+      else {
+        return go;
+      }
     };
     async.applyEach = doParallel(_applyEach);
     async.applyEachSeries = doSeries(_applyEach);
 
     async.forever = function (fn, callback) {
-        function next(err) {
-            if (err) {
-                if (callback) {
-                    return callback(err);
-                }
-                throw err;
-            }
-            fn(next);
+      function next(err) {
+        if (err) {
+          if (callback) {
+            return callback(err);
+          }
+          throw err;
         }
-        next();
+        fn(next);
+      }
+      next();
     };
 
     // AMD / RequireJS
     if (typeof define !== 'undefined' && define.amd) {
-        define([], function () {
-            return async;
-        });
+      define([], function () {
+        return async;
+      });
     }
     // Node.js
     else if (typeof module !== 'undefined' && module.exports) {
-        module.exports = async;
+      module.exports = async;
     }
     // included directly via <script> tag
     else {
-        root.async = async;
+      root.async = async;
     }
 
-}());
+  }());
 
-/* This is the infix file */
-/* jshint ignore:end */
+  /* This is the infix file */
+  /* jshint ignore:end */
   var asyncLoader = module.exports;  // async has updated this, now save in our var, to that it can be returned from our dummy require
   function require() {
     return asyncLoader;
   }
 
-/* End of infix file */
+  /* End of infix file */
 
-(function () {
+  (function () {
 
-  var async = require('async');
-
-  /*
-   * Sample Usage
-   *
-   * var engine = formsRulesEngine(form-definition);
-   *
-   * engine.validateForms(form-submission, function(err, res) {});
-   *      res:
-   *      {
-   *          "validation": {
-   *              "fieldId": {
-   *                  "fieldId": "",
-   *                  "valid": true,
-   *                  "errorMessages": [
-   *                      "length should be 3 to 5",
-   *                      "should not contain dammit",
-   *                      "should repeat at least 2 times"
-   *                  ]
-   *              },
-   *              "fieldId1": {
-   *
-   *              }
-   *          }
-   *      }
-   *
-   *
-   * engine.validateField(fieldId, submissionJSON, function(err,res) {});
-   *      // validate only field values on validation (no rules, no repeat checking)
-   *      res:
-   *      "validation":{
-   *              "fieldId":{
-   *                  "fieldId":"",
-   *                  "valid":true,
-   *                  "errorMessages":[
-   *                      "length should be 3 to 5",
-   *                      "should not contain dammit"
-   *                  ]
-   *              }
-   *          }
-   *
-   * engine.checkRules(submissionJSON, unction(err, res) {})
-   *      // check all rules actions
-   *      res:
-   *      {
-   *          "actions": {
-   *              "pages": {
-   *                  "targetId": {
-   *                      "targetId": "",
-   *                      "action": "show|hide"
-   *                  }
-   *              },
-   *              "fields": {
-   *
-   *              }
-   *          }
-   *      }
-   *
-   */
-
-  var FIELD_TYPE_CHECKBOX = "checkboxes";
-  var FIELD_TYPE_DATETIME = "dateTime";
-  var FIELD_TYPE_DATETIME_DATETIMEUNIT_DATEONLY = "date";
-  var FIELD_TYPE_DATETIME_DATETIMEUNIT_TIMEONLY = "time";
-  var FIELD_TYPE_DATETIME_DATETIMEUNIT_DATETIME = "datetime";
-
-  var formsRulesEngine = function (formDef) {
-    var initialised;
-
-    var definition = formDef;
-    var submission;
-
-    var fieldMap = {};
-    var requiredFieldMap = {};
-    var submissionRequiredFieldsMap = {}; // map to hold the status of the required fields per submission
-    var fieldRulePredicateMap = {};
-    var fieldRuleSubjectMap = {};
-    var pageRulePredicateMap = {};
-    var pageRuleSubjectMap = {};
-    var submissionFieldsMap = {};
-    var validatorsMap = {
-      "text": validatorString,
-      "textarea": validatorString,
-      "number": validatorNumericString,
-      "emailAddress": validatorEmail,
-      "dropdown": validatorDropDown,
-      "radio": validatorDropDown,
-      "checkboxes": validatorCheckboxes,
-      "location": validatorLocation,
-      "locationMap": validatorLocationMap,
-      "photo": validatorFile,
-      "signature": validatorFile,
-      "file": validatorFile,
-      "dateTime": validatorDateTime,
-      "url": validatorString,
-      "sectionBreak": validatorSection
-    };
-
-    var validatorsClientMap = {
-      "text": validatorString,
-      "textarea": validatorString,
-      "number": validatorNumericString,
-      "emailAddress": validatorEmail,
-      "dropdown": validatorDropDown,
-      "radio": validatorDropDown,
-      "checkboxes": validatorCheckboxes,
-      "location": validatorLocation,
-      "locationMap": validatorLocationMap,
-      "photo": validatorAnyFile,
-      "signature": validatorAnyFile,
-      "file": validatorAnyFile,
-      "dateTime": validatorDateTime,
-      "url": validatorString,
-      "sectionBreak": validatorSection
-    };
-
-    var isFieldRuleSubject = function (fieldId) {
-      return !!fieldRuleSubjectMap[fieldId];
-    };
-
-    var isPageRuleSubject = function (pageId) {
-      return !!pageRuleSubjectMap[pageId];
-    };
-
-    function buildFieldMap(cb) {
-      // Iterate over all fields in form definition & build fieldMap
-      async.each(definition.pages, function (page, cbPages) {
-        async.each(page.fields, function (field, cbFields) {
-          field.pageId = page._id;
-
-          field.fieldOptions = field.fieldOptions ? field.fieldOptions : {};
-          field.fieldOptions.definition = field.fieldOptions.definition ? field.fieldOptions.definition : {};
-          field.fieldOptions.validation = field.fieldOptions.validation ? field.fieldOptions.validation : {};
-
-          fieldMap[field._id] = field;
-          if (field.required) {
-            requiredFieldMap[field._id] = {
-              field: field,
-              submitted: false,
-              validated: false
-            };
-          }
-          return cbFields();
-        }, function (err) {
-          return cbPages();
-        });
-      }, cb);
-    }
-
-    function buildFieldRuleMaps(cb) {
-      // Iterate over all rules in form definition & build ruleSubjectMap
-      async.each(definition.fieldRules, function (rule, cbRules) {
-        async.each(rule.ruleConditionalStatements, function (ruleConditionalStatement, cbRuleConditionalStatements) {
-          var fieldId = ruleConditionalStatement.sourceField;
-          fieldRulePredicateMap[fieldId] = fieldRulePredicateMap[fieldId] || [];
-          fieldRulePredicateMap[fieldId].push(rule);
-          return cbRuleConditionalStatements();
-        }, function (err) {
-          fieldRuleSubjectMap[rule.targetField] = fieldRuleSubjectMap[rule.targetField] || [];
-          fieldRuleSubjectMap[rule.targetField].push(rule);
-          return cbRules();
-        });
-      }, cb);
-    }
-
-    function buildPageRuleMap(cb) {
-      // Iterate over all rules in form definition & build ruleSubjectMap
-      async.each(definition.pageRules, function (rule, cbRules) {
-        var rulesId = rule._id;
-        async.each(rule.ruleConditionalStatements, function (ruleConditionalStatement, cbRulePredicates) {
-          var fieldId = ruleConditionalStatement.sourceField;
-          pageRulePredicateMap[fieldId] = pageRulePredicateMap[fieldId] || [];
-          pageRulePredicateMap[fieldId].push(rule);
-          return cbRulePredicates();
-        }, function (err) {
-          pageRuleSubjectMap[rule.targetPage] = pageRuleSubjectMap[rule.targetPage] || [];
-          pageRuleSubjectMap[rule.targetPage].push(rule);
-          return cbRules();
-        });
-      }, cb);
-    }
-
-    function buildSubmissionFieldsMap(cb) {
-      submissionRequiredFieldsMap = JSON.parse(JSON.stringify(requiredFieldMap)); // clone the map for use with this submission
-      submissionFieldsMap = {}; // start with empty map, rulesEngine can be called with multiple submissions
-
-      // iterate over all the fields in the submissions and build a map for easier lookup
-      async.each(submission.formFields, function (formField, cb) {
-        if (!formField.fieldId) return cb(new Error("No fieldId in this submission entry: " + util.inspect(formField)));
-
-        submissionFieldsMap[formField.fieldId] = formField;
-        return cb();
-      }, cb);
-    }
-
-    function init(cb) {
-      if (initialised) return cb();
-      async.parallel([
-        buildFieldMap,
-        buildFieldRuleMaps,
-        buildPageRuleMap
-      ], function (err) {
-        if (err) return cb(err);
-        initialised = true;
-        return cb();
-      });
-    }
-
-    function initSubmission(formSubmission, cb) {
-      init(function (err) {
-        if (err) return cb(err);
-
-        submission = formSubmission;
-        buildSubmissionFieldsMap(cb);
-      });
-    }
-
-    function getPreviousFieldValues(submittedField, previousSubmission, cb) {
-      if (previousSubmission && previousSubmission.formFields) {
-        async.filter(previousSubmission.formFields, function (formField, cb) {
-          return cb(formField.fieldId.toString() == submittedField.fieldId.toString());
-        }, function (results) {
-          var previousFieldValues = null;
-          if (results && results[0] && results[0].fieldValues) {
-            previousFieldValues = results[0].fieldValues;
-          }
-          return cb(undefined, previousFieldValues);
-        });
-      } else {
-        return cb();
-      }
-    }
-
-    function validateForm(submission, previousSubmission, cb) {
-      if ("function" === typeof previousSubmission) {
-        cb = previousSubmission;
-        previousSubmission = null;
-      }
-      init(function (err) {
-        if (err) return cb(err);
-
-        initSubmission(submission, function (err) {
-          if (err) return cb(err);
-
-          async.waterfall([
-
-            function (cb) {
-              return cb(undefined, {
-                validation: {
-                  valid: true
-                }
-              }); // any invalid fields will set this to false
-            },
-            function (res, cb) {
-              validateSubmittedFields(res, previousSubmission, cb);
-            },
-            checkIfRequiredFieldsNotSubmitted
-          ], function (err, results) {
-            if (err) return cb(err);
-
-            return cb(undefined, results);
-          });
-        });
-      });
-    }
-
-    function validateSubmittedFields(res, previousSubmission, cb) {
-      // for each field, call validateField
-      async.each(submission.formFields, function (submittedField, callback) {
-        var fieldID = submittedField.fieldId;
-        var fieldDef = fieldMap[fieldID];
-
-        getPreviousFieldValues(submittedField, previousSubmission, function (err, previousFieldValues) {
-          if (err) return callback(err);
-          getFieldValidationStatus(submittedField, fieldDef, previousFieldValues, function (err, fieldRes) {
-            if (err) return callback(err);
-
-            if (!fieldRes.valid) {
-              res.validation.valid = false; // indicate invalid form if any fields invalid
-              res.validation[fieldID] = fieldRes; // add invalid field info to validate form result
-            }
-
-            return callback();
-          });
-
-        });
-      }, function (err) {
-        if (err) {
-          return cb(err);
-        }
-        return cb(undefined, res);
-      });
-    }
-
-    function checkIfRequiredFieldsNotSubmitted(res, cb) {
-      async.each(Object.keys(submissionRequiredFieldsMap), function (requiredFieldId, cb) {
-        var resField = {};
-        if (!submissionRequiredFieldsMap[requiredFieldId].submitted) {
-          isFieldVisible(requiredFieldId, true, function (err, visible) {
-            if (err) return cb(err);
-            if (visible) { // we only care about required fields if they are visible
-              resField.fieldId = requiredFieldId;
-              resField.valid = false;
-              resField.fieldErrorMessage = ["Required Field Not Submitted"];
-              res.validation[requiredFieldId] = resField;
-              res.validation.valid = false;
-            }
-            return cb();
-          });
-        } else { // was included in submission
-          return cb();
-        }
-      }, function (err) {
-        if (err) return cb(err);
-        return cb(undefined, res);
-      });
-    }
+    var async = require('async');
 
     /*
-     * validate only field values on validation (no rules, no repeat checking)
-     *     res:
-     *     "validation":{
-     *             "fieldId":{
-     *                 "fieldId":"",
-     *                 "valid":true,
-     *                 "errorMessages":[
-     *                     "length should be 3 to 5",
-     *                     "should not contain dammit"
-     *                 ]
-     *             }
-     *         }
-     */
-    function validateField(fieldId, submission, cb) {
-      init(function (err) {
-        if (err) return cb(err);
-
-        initSubmission(submission, function (err) {
-          if (err) return cb(err);
-
-          var submissionField = submissionFieldsMap[fieldId];
-          var fieldDef = fieldMap[fieldId];
-          getFieldValidationStatus(submissionField, fieldDef, null, function (err, res) {
-            if (err) return cb(err);
-            var ret = {
-              validation: {}
-            };
-            ret.validation[fieldId] = res;
-            return cb(undefined, ret);
-          });
-        });
-      });
-    }
-
-    /*
-     * validate only single field value (no rules, no repeat checking)
-     * cb(err, result)
-     * example of result:
-     * "validation":{
-     *         "fieldId":{
-     *             "fieldId":"",
-     *             "valid":true,
-     *             "errorMessages":[
-     *                 "length should be 3 to 5",
-     *                 "should not contain dammit"
-     *             ]
-     *         }
-     *     }
-     */
-    function validateFieldValue(fieldId, inputValue, valueIndex, cb) {
-      if ("function" === typeof valueIndex) {
-        cb = valueIndex;
-        valueIndex = 0;
-      }
-
-      init(function (err) {
-        if (err) return cb(err);
-        var fieldDefinition = fieldMap[fieldId];
-
-        var required = false;
-        if (fieldDefinition.repeating &&
-          fieldDefinition.fieldOptions &&
-          fieldDefinition.fieldOptions.definition &&
-          fieldDefinition.fieldOptions.definition.minRepeat) {
-          required = (valueIndex < fieldDefinition.fieldOptions.definition.minRepeat);
-        } else {
-          required = fieldDefinition.required;
-        }
-
-        var validation = (fieldDefinition.fieldOptions && fieldDefinition.fieldOptions.validation) ? fieldDefinition.fieldOptions.validation : undefined;
-
-        if (validation && false === validation.validateImmediately) {
-          var ret = {
-            validation: {}
-          };
-          ret.validation[fieldId] = {
-            "valid": true
-          };
-          return cb(undefined, ret);
-        }
-
-        if (fieldEmpty(inputValue)) {
-          if (required) {
-            return formatResponse("No value specified for required input", cb);
-          } else {
-            return formatResponse(undefined, cb); // optional field not supplied is valid
-          }
-        }
-
-        // not empty need to validate
-        getClientValidatorFunction(fieldDefinition.type, function (err, validator) {
-          if (err) return cb(err);
-
-          validator(inputValue, fieldDefinition, undefined, function (err) {
-            var message;
-            if (err) {
-              if (err.message) {
-                message = err.message;
-              } else {
-                message = "Unknown error message";
-              }
-            }
-            formatResponse(message, cb);
-          });
-        });
-      });
-
-      function formatResponse(msg, cb) {
-        var messages = {
-          errorMessages: []
-        };
-        if (msg) {
-          messages.errorMessages.push(msg);
-        }
-        return createValidatorResponse(fieldId, messages, function (err, res) {
-          if (err) return cb(err);
-          var ret = {
-            validation: {}
-          };
-          ret.validation[fieldId] = res;
-          return cb(undefined, ret);
-        });
-      }
-    }
-
-    function createValidatorResponse(fieldId, messages, cb) {
-      // intentionally not checking err here, used further down to get validation errors
-      var res = {};
-      res.fieldId = fieldId;
-      res.errorMessages = messages.errorMessages || [];
-      res.fieldErrorMessage = messages.fieldErrorMessage || [];
-      async.some(res.errorMessages, function (item, cb) {
-        return cb(item !== null);
-      }, function (someErrors) {
-        res.valid = !someErrors && (res.fieldErrorMessage.length < 1);
-
-        return cb(undefined, res);
-      });
-    }
-
-    function getFieldValidationStatus(submittedField, fieldDef, previousFieldValues, cb) {
-      validateFieldInternal(submittedField, fieldDef, previousFieldValues, function (err, messages) {
-        if (err) return cb(err);
-        createValidatorResponse(submittedField.fieldId, messages, cb);
-      });
-    }
-
-    function getMapFunction(key, map, cb) {
-      var validator = map[key];
-      if (!validator) {
-        return cb(new Error("Invalid Field Type " + key));
-      }
-
-      return cb(undefined, validator);
-    }
-
-    function getValidatorFunction(fieldType, cb) {
-      return getMapFunction(fieldType, validatorsMap, cb);
-    }
-
-    function getClientValidatorFunction(fieldType, cb) {
-      return getMapFunction(fieldType, validatorsClientMap, cb);
-    }
-
-    function fieldEmpty(fieldValue) {
-      return ('undefined' === typeof fieldValue || null === fieldValue || "" === fieldValue); // empty string also regarded as not specified
-    }
-
-    function validateFieldInternal(submittedField, fieldDef, previousFieldValues, cb) {
-      if ("function" === typeof previousFieldValues) {
-        cb = previousFieldValues;
-        previousFieldValues = null;
-      }
-
-      countSubmittedValues(submittedField, function (err, numSubmittedValues) {
-        if (err) return cb(err);
-        async.series({
-          valuesSubmitted: async.apply(checkValueSubmitted, submittedField, fieldDef),
-          repeats: async.apply(checkRepeat, numSubmittedValues, fieldDef),
-          values: async.apply(checkValues, submittedField, fieldDef, previousFieldValues)
-        }, function (err, results) {
-          if (err) return cb(err);
-
-          var fieldErrorMessages = [];
-          if (results.valuesSubmitted) {
-            fieldErrorMessages.push(results.valuesSubmitted);
-          }
-          if (results.repeats) {
-            fieldErrorMessages.push(results.repeats);
-          }
-          return cb(undefined, {
-            fieldErrorMessage: fieldErrorMessages,
-            errorMessages: results.values
-          });
-        });
-      });
-
-      return; // just functions below this
-
-      function checkValueSubmitted(submittedField, fieldDefinition, cb) {
-        if (!fieldDefinition.required) return cb(undefined, null);
-        var valueSubmitted = submittedField && submittedField.fieldValues && (submittedField.fieldValues.length > 0);
-        if (!valueSubmitted) {
-          return cb(undefined, "No value submitted for field " + fieldDefinition.name);
-        }
-        return cb(undefined, null);
-      }
-
-      function countSubmittedValues(submittedField, cb) {
-        var numSubmittedValues = 0;
-        if (submittedField && submittedField.fieldValues && submittedField.fieldValues.length > 0) {
-          for (var i = 0; i < submittedField.fieldValues.length; i += 1) {
-            if (submittedField.fieldValues[i]) {
-              numSubmittedValues += 1;
-            }
-          }
-        }
-        return cb(undefined, numSubmittedValues);
-      }
-
-      function checkRepeat(numSubmittedValues, fieldDefinition, cb) {
-
-        if (fieldDefinition.repeating && fieldDefinition.fieldOptions && fieldDefinition.fieldOptions.definition) {
-          if (fieldDefinition.fieldOptions.definition.minRepeat) {
-            if (numSubmittedValues < fieldDefinition.fieldOptions.definition.minRepeat) {
-              return cb(undefined, "Expected min of " + fieldDefinition.fieldOptions.definition.minRepeat + " values for field " + fieldDefinition.name + " but got " + numSubmittedValues);
-            }
-          }
-
-          if (fieldDefinition.fieldOptions.definition.maxRepeat) {
-            if (numSubmittedValues > fieldDefinition.fieldOptions.definition.maxRepeat) {
-              return cb(undefined, "Expected max of " + fieldDefinition.fieldOptions.definition.maxRepeat + " values for field " + fieldDefinition.name + " but got " + numSubmittedValues);
-            }
-          }
-        } else {
-          if (numSubmittedValues > 1) {
-            return cb(undefined, "Should not have multiple values for non-repeating field");
-          }
-        }
-
-        return cb(undefined, null);
-      }
-
-      function checkValues(submittedField, fieldDefinition, previousFieldValues, cb) {
-        getValidatorFunction(fieldDefinition.type, function (err, validator) {
-          if (err) return cb(err);
-          async.map(submittedField.fieldValues, function (fieldValue, cb) {
-            if (fieldEmpty(fieldValue)) {
-              return cb(undefined, null);
-            } else {
-              validator(fieldValue, fieldDefinition, previousFieldValues, function (validationError) {
-                var errorMessage;
-                if (validationError) {
-                  errorMessage = validationError.message || "Error during validation of field";
-                } else {
-                  errorMessage = null;
-                }
-
-                if (submissionRequiredFieldsMap[fieldDefinition._id]) { // set to true if at least one value
-                  submissionRequiredFieldsMap[fieldDefinition._id].submitted = true;
-                }
-
-                return cb(undefined, errorMessage);
-              });
-            }
-          }, function (err, results) {
-            if (err) return cb(err);
-
-            return cb(undefined, results);
-          });
-        });
-      }
-
-    }
-
-    function convertSimpleFormatToRegex(field_format_string) {
-      var regex = "^";
-      var C = "c".charCodeAt(0);
-      var N = "n".charCodeAt(0);
-
-      var i;
-      var ch;
-      var match;
-      var len = field_format_string.length;
-      for (i = 0; i < len; i += 1) {
-        ch = field_format_string.charCodeAt(i);
-        switch (ch) {
-          case C:
-            match = "[a-zA-Z0-9]";
-            break;
-          case N:
-            match = "[0-9]";
-            break;
-          default:
-            var num = ch.toString(16).toUpperCase();
-            match = "\\u" + ("0000" + num).substr(-4);
-            break;
-        }
-        regex += match;
-      }
-      return regex + "$";
-    }
-
-    function validFormatRegex(fieldValue, field_format_string) {
-      var pattern = new RegExp(field_format_string);
-      return pattern.test(fieldValue);
-    }
-
-    function validFormat(fieldValue, field_format_mode, field_format_string) {
-      var regex;
-      if ("simple" === field_format_mode) {
-        regex = convertSimpleFormatToRegex(field_format_string);
-      } else if ("regex" === field_format_mode) {
-        regex = field_format_string;
-      } else { // should never be anything else, but if it is then default to simple format
-        regex = convertSimpleFormatToRegex(field_format_string);
-      }
-
-      return validFormatRegex(fieldValue, regex);
-    }
-
-    function validatorString(fieldValue, fieldDefinition, previousFieldValues, cb) {
-      if (typeof fieldValue !== "string") {
-        return cb(new Error("Expected string but got " + typeof(fieldValue)));
-      }
-
-      var validation = {};
-      if (fieldDefinition && fieldDefinition.fieldOptions && fieldDefinition.fieldOptions.validation) {
-        validation = fieldDefinition.fieldOptions.validation;
-      }
-
-      var field_format_mode = validation.field_format_mode || "";
-      field_format_mode = field_format_mode.trim();
-      var field_format_string = validation.field_format_string || "";
-      field_format_string = field_format_string.trim();
-
-      if (field_format_string && (field_format_string.length > 0) && field_format_mode && (field_format_mode.length > 0)) {
-        if (!validFormat(fieldValue, field_format_mode, field_format_string)) {
-          return cb(new Error("field value in incorrect format, expected format: " + field_format_string + " but submission value is: " + fieldValue));
-        }
-      }
-
-      if (fieldDefinition.fieldOptions && fieldDefinition.fieldOptions.validation && fieldDefinition.fieldOptions.validation.min) {
-        if (fieldValue.length < fieldDefinition.fieldOptions.validation.min) {
-          return cb(new Error("Expected minimum string length of " + fieldDefinition.fieldOptions.validation.min + " but submission is " + fieldValue.length + ". Submitted val: " + fieldValue));
-        }
-      }
-
-      if (fieldDefinition.fieldOptions && fieldDefinition.fieldOptions.validation && fieldDefinition.fieldOptions.validation.max) {
-        if (fieldValue.length > fieldDefinition.fieldOptions.validation.max) {
-          return cb(new Error("Expected maximum string length of " + fieldDefinition.fieldOptions.validation.max + " but submission is " + fieldValue.length + ". Submitted val: " + fieldValue));
-        }
-      }
-
-      return cb();
-    }
-
-    function validatorNumericString(fieldValue, fieldDefinition, previousFieldValues, cb) {
-      var testVal = (fieldValue - 0); // coerce to number (or NaN)
-      var numeric = (testVal == fieldValue); // testVal co-erced to numeric above, so numeric comparison and NaN != NaN
-      if (!numeric) {
-        return cb(new Error("Expected numeric but got: " + fieldValue));
-      }
-
-      return validatorNumber(testVal, fieldDefinition, previousFieldValues, cb);
-    }
-
-    function validatorNumber(fieldValue, fieldDefinition, previousFieldValues, cb) {
-      if (typeof fieldValue !== "number") {
-        return cb(new Error("Expected number but got " + typeof(fieldValue)));
-      }
-
-      if (fieldDefinition.fieldOptions && fieldDefinition.fieldOptions.validation && fieldDefinition.fieldOptions.validation.min) {
-        if (fieldValue < fieldDefinition.fieldOptions.validation.min) {
-          return cb(new Error("Expected minimum Number " + fieldDefinition.fieldOptions.validation.min + " but submission is " + fieldValue + ". Submitted number: " + fieldValue));
-        }
-      }
-
-      if (fieldDefinition.fieldOptions.validation.max) {
-        if (fieldValue > fieldDefinition.fieldOptions.validation.max) {
-          return cb(new Error("Expected maximum Number " + fieldDefinition.fieldOptions.validation.max + " but submission is " + fieldValue + ". Submitted number: " + fieldValue));
-        }
-      }
-
-      return cb();
-    }
-
-    function validatorEmail(fieldValue, fieldDefinition, previousFieldValues, cb) {
-      if (typeof(fieldValue) !== "string") {
-        return cb(new Error("Expected string but got " + typeof(fieldValue)));
-      }
-
-      if (fieldValue.match(/[-0-9a-zA-Z.+_]+@[-0-9a-zA-Z.+_]+\.[a-zA-Z]{2,4}/g) === null) {
-        return cb(new Error("Invalid email address format: " + fieldValue));
-      } else {
-        return cb();
-      }
-    }
-
-    function validatorDropDown(fieldValue, fieldDefinition, previousFieldValues, cb) {
-      if (typeof(fieldValue) !== "string") {
-        return cb(new Error("Expected submission to be string but got " + typeof(fieldValue)));
-      }
-
-      //Check value exists in the field definition
-      if (!fieldDefinition.fieldOptions.definition.options) {
-        return cb(new Error("No options exist for field " + fieldDefinition.name));
-      }
-
-      async.some(fieldDefinition.fieldOptions.definition.options, function (dropdownOption, cb) {
-        return cb(dropdownOption.label === fieldValue);
-      }, function (found) {
-        if (!found) {
-          return cb(new Error("Invalid option specified: " + fieldValue));
-        } else {
-          return cb();
-        }
-      });
-    }
-
-    function validatorCheckboxes(fieldValue, fieldDefinition, previousFieldValues, cb) {
-      var minVal;
-      if (fieldDefinition && fieldDefinition.fieldOptions && fieldDefinition.fieldOptions.validation) {
-        minVal = fieldDefinition.fieldOptions.validation.min;
-      }
-      var maxVal;
-      if (fieldDefinition && fieldDefinition.fieldOptions && fieldDefinition.fieldOptions.validation) {
-        maxVal = fieldDefinition.fieldOptions.validation.max;
-      }
-
-      if (minVal) {
-        if (fieldValue.selections === null || fieldValue.selections === undefined || fieldValue.selections.length < minVal) {
-          var len;
-          if (fieldValue.selections) {
-            len = fieldValue.selections.length;
-          }
-          return cb(new Error("Expected a minimum number of selections " + minVal + " but got " + len));
-        }
-      }
-
-      if (maxVal) {
-        if (fieldValue.selections) {
-          if (fieldValue.selections.length > maxVal) {
-            return cb(new Error("Expected a maximum number of selections " + maxVal + " but got " + fieldValue.selections.length));
-          }
-        }
-      }
-
-      var optionsInCheckbox = [];
-
-      async.eachSeries(fieldDefinition.fieldOptions.definition.options, function (choice, cb) {
-        for (var choiceName in choice) {
-          optionsInCheckbox.push(choice[choiceName]);
-        }
-        return cb();
-      }, function (err) {
-        async.eachSeries(fieldValue.selections, function (selection, cb) {
-          if (typeof(selection) !== "string") {
-            return cb(new Error("Expected checkbox submission to be string but got " + typeof(selection)));
-          }
-
-          if (optionsInCheckbox.indexOf(selection) === -1) {
-            return cb(new Error("Checkbox Option " + selection + " does not exist in the field."));
-          }
-
-          return cb();
-        }, cb);
-      });
-    }
-
-    function validatorLocationMap(fieldValue, fieldDefinition, previousFieldValues, cb) {
-      if (fieldValue.lat && fieldValue["long"]) {
-        if (isNaN(parseFloat(fieldValue.lat)) || isNaN(parseFloat(fieldValue["long"]))) {
-          return cb(new Error("Invalid latitude and longitude values"));
-        } else {
-          return cb();
-        }
-      } else {
-        return cb(new Error("Invalid object for locationMap submission"));
-      }
-    }
-
-
-    function validatorLocation(fieldValue, fieldDefinition, previousFieldValues, cb) {
-      if (fieldDefinition.fieldOptions.definition.locationUnit === "latlong") {
-        if (fieldValue.lat && fieldValue["long"]) {
-          if (isNaN(parseFloat(fieldValue.lat)) || isNaN(parseFloat(fieldValue["long"]))) {
-            return cb(new Error("Invalid latitude and longitude values"));
-          } else {
-            return cb();
-          }
-        } else {
-          return cb(new Error("Invalid object for latitude longitude submission"));
-        }
-      } else {
-        if (fieldValue.zone && fieldValue.eastings && fieldValue.northings) {
-          //Zone must be 3 characters, eastings 6 and northings 9
-          return validateNorthingsEastings(fieldValue, cb);
-        } else {
-          return cb(new Error("Invalid object for northings easting submission. Zone, Eastings and Northings elemets are required"));
-        }
-      }
-
-      function validateNorthingsEastings(fieldValue, cb) {
-        if (typeof(fieldValue.zone) !== "string" || fieldValue.zone.length === 0) {
-          return cb(new Error("Invalid zone definition for northings and eastings location. " + fieldValue.zone));
-        }
-
-        var east = parseInt(fieldValue.eastings, 10);
-        if (isNaN(east)) {
-          return cb(new Error("Invalid eastings definition for northings and eastings location. " + fieldValue.eastings));
-        }
-
-        var north = parseInt(fieldValue.northings, 10);
-        if (isNaN(north)) {
-          return cb(new Error("Invalid northings definition for northings and eastings location. " + fieldValue.northings));
-        }
-
-        return cb();
-      }
-    }
-
-    function validatorAnyFile(fieldValue, fieldDefinition, previousFieldValues, cb) {
-      // if any of the following validators return ok, then return ok.
-      validatorBase64(fieldValue, fieldDefinition, previousFieldValues, function (err) {
-        if (!err) {
-          return cb();
-        }
-        validatorFile(fieldValue, fieldDefinition, previousFieldValues, function (err) {
-          if (!err) {
-            return cb();
-          }
-          validatorFileObj(fieldValue, fieldDefinition, previousFieldValues, function (err) {
-            if (!err) {
-              return cb();
-            }
-            return cb(err);
-          });
-        });
-      });
-    }
-
-    function checkFileSize(fieldDefinition, fieldValue, sizeKey, cb) {
-      fieldDefinition = fieldDefinition || {};
-      var fieldOptions = fieldDefinition.fieldOptions || {};
-      var fieldOptionsDef = fieldOptions.definition || {};
-      var fileSizeMax = fieldOptionsDef.file_size || null; //FileSizeMax will be in KB. File size is in bytes
-
-      if (fileSizeMax !== null) {
-        var fieldValueSize = fieldValue[sizeKey];
-        var fieldValueSizeKB = 1;
-        if (fieldValueSize > 1000) {
-          fieldValueSizeKB = fieldValueSize / 1000;
-        }
-        console.log("Comparing File Size: ", fileSizeMax, fieldValueSize);
-        if (fieldValueSize > (fileSizeMax * 1000)) {
-          return cb(new Error("File size is too large. File can be a maximum of " + fileSizeMax + "KB. Size of file selected: " + fieldValueSizeKB + "KB"));
-        } else {
-          return cb();
-        }
-      } else {
-        return cb();
-      }
-    }
-
-    function validatorFile(fieldValue, fieldDefinition, previousFieldValues, cb) {
-      if (typeof fieldValue !== "object") {
-        return cb(new Error("Expected object but got " + typeof(fieldValue)));
-      }
-
-      var keyTypes = [
-        {
-          keyName: "fileName",
-          valueType: "string"
-        },
-        {
-          keyName: "fileSize",
-          valueType: "number"
-        },
-        {
-          keyName: "fileType",
-          valueType: "string"
-        },
-        {
-          keyName: "fileUpdateTime",
-          valueType: "number"
-        },
-        {
-          keyName: "hashName",
-          valueType: "string"
-        }
-      ];
-
-      async.each(keyTypes, function (keyType, cb) {
-        var actualType = typeof fieldValue[keyType.keyName];
-        if (actualType !== keyType.valueType) {
-          return cb(new Error("Expected " + keyType.valueType + " but got " + actualType));
-        }
-        if (keyType.keyName === "fileName" && fieldValue[keyType.keyName].length <= 0) {
-          return cb(new Error("Expected value for " + keyType.keyName));
-        }
-
-        return cb();
-      }, function (err) {
-        if (err) return cb(err);
-
-        checkFileSize(fieldDefinition, fieldValue, "fileSize", function (err) {
-          if (err) {
-            return cb(err);
-          }
-
-          if (fieldValue.hashName.indexOf("filePlaceHolder") > -1) { //TODO abstract out to config
-            return cb();
-          } else if (previousFieldValues && previousFieldValues.hashName && previousFieldValues.hashName.indexOf(fieldValue.hashName) > -1) {
-            return cb();
-          } else {
-            return cb(new Error("Invalid file placeholder text" + fieldValue.hashName));
-          }
-        });
-      });
-    }
-
-    function validatorFileObj(fieldValue, fieldDefinition, previousFieldValues, cb) {
-      if ((typeof File !== "function")) {
-        return cb(new Error("Expected File object but got " + typeof(fieldValue)));
-      }
-
-      var keyTypes = [
-        {
-          keyName: "name",
-          valueType: "string"
-        },
-        {
-          keyName: "size",
-          valueType: "number"
-        }
-      ];
-
-      async.each(keyTypes, function (keyType, cb) {
-        var actualType = typeof fieldValue[keyType.keyName];
-        if (actualType !== keyType.valueType) {
-          return cb(new Error("Expected " + keyType.valueType + " but got " + actualType));
-        }
-        if (actualType === "string" && fieldValue[keyType.keyName].length <= 0) {
-          return cb(new Error("Expected value for " + keyType.keyName));
-        }
-        if (actualType === "number" && fieldValue[keyType.keyName] <= 0) {
-          return cb(new Error("Expected > 0 value for " + keyType.keyName));
-        }
-
-        return cb();
-      }, function (err) {
-        if (err) return cb(err);
-
-
-        checkFileSize(fieldDefinition, fieldValue, "size", function (err) {
-          if (err) {
-            return cb(err);
-          }
-          return cb();
-        });
-      });
-    }
-
-    function validatorBase64(fieldValue, fieldDefinition, previousFieldValues, cb) {
-      if (typeof fieldValue !== "string") {
-        return cb(new Error("Expected base64 string but got " + typeof(fieldValue)));
-      }
-
-      if (fieldValue.length <= 0) {
-        return cb(new Error("Expected base64 string but was empty"));
-      }
-
-      return cb();
-    }
-
-    function validatorDateTime(fieldValue, fieldDefinition, previousFieldValues, cb) {
-      var testDate;
-      var valid = false;
-      var parts = [];
-
-      if (typeof(fieldValue) !== "string") {
-        return cb(new Error("Expected string but got " + typeof(fieldValue)));
-      }
-
-      switch (fieldDefinition.fieldOptions.definition.datetimeUnit) {
-        case FIELD_TYPE_DATETIME_DATETIMEUNIT_DATEONLY:
-
-          parts = fieldValue.split("/");
-          valid = parts.length === 3;
-
-          if(valid){
-            valid = isNumberBetween(parts[2], 1, 31);
-          }
-
-          if(valid){
-            valid = isNumberBetween(parts[1], 1, 12);
-          }
-
-          if(valid){
-            valid = isNumberBetween(parts[0], 1000, 9999);
-          }
-
-          try {
-            if(valid){
-              testDate = new Date(parts[3], parts[1], parts[0]);
-            } else {
-              testDate = new Date(fieldValue);
-            }
-            valid = (testDate.toString() !== "Invalid Date");
-          } catch (e) {
-            valid = false;
-          }
-
-          if (valid) {
-            return cb();
-          } else {
-            return cb(new Error("Invalid date value " + fieldValue + ". Date format is YYYY/MM/DD"));
-          }
-          break;
-        case FIELD_TYPE_DATETIME_DATETIMEUNIT_TIMEONLY:
-          parts = fieldValue.split(':');
-          valid = (parts.length === 2) || (parts.length === 3);
-          if (valid) {
-            valid = isNumberBetween(parts[0], 0, 23);
-          }
-          if (valid) {
-            valid = isNumberBetween(parts[1], 0, 59);
-          }
-          if (valid && (parts.length === 3)) {
-            valid = isNumberBetween(parts[2], 0, 59);
-          }
-          if (valid) {
-            return cb();
-          } else {
-            return cb(new Error("Invalid time value " + fieldValue + ". Time format is HH:MM:SS"));
-          }
-          break;
-        case FIELD_TYPE_DATETIME_DATETIMEUNIT_DATETIME:
-          parts = fieldValue.split(/[- :]/);
-
-          valid = (parts.length === 6) || (parts.length === 5);
-
-          if(valid){
-            valid = isNumberBetween(parts[2], 1, 31);
-          }
-
-          if(valid){
-            valid = isNumberBetween(parts[1], 1, 12);
-          }
-
-          if(valid){
-            valid = isNumberBetween(parts[0], 1000, 9999);
-          }
-
-          if (valid) {
-            valid = isNumberBetween(parts[3], 0, 23);
-          }
-          if (valid) {
-            valid = isNumberBetween(parts[4], 0, 59);
-          }
-          if (valid && parts.length === 6) {
-            valid = isNumberBetween(parts[5], 0, 59);
-          } else {
-            parts[5] = 0;
-          }
-
-          try {
-            if(valid){
-              testDate = new Date(parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]);
-            } else {
-              testDate = new Date(fieldValue);
-            }
-
-            valid = (testDate.toString() !== "Invalid Date");
-          } catch (e) {
-            valid = false;
-          }
-
-          if(valid){
-            return cb();
-          } else {
-            return cb(new Error("Invalid dateTime string " + fieldValue + ". dateTime format is YYYY/MM/DD HH:MM:SS"));
-          }
-          break;
-        default:
-          return cb(new Error("Invalid dateTime fieldtype " + fieldDefinition.fieldOptions.definition.datetimeUnit));
-      }
-    }
-
-    function validatorSection(value, fieldDefinition, previousFieldValues, cb) {
-      return cb(new Error("Should not submit section field: " + fieldDefinition.name));
-    }
-
-    function rulesResult(rules, cb) {
-      var visible = true;
-
-      // Itterate over each rule that this field is a predicate of
-      async.each(rules, function (rule, cbRule) {
-        // For each rule, itterate over the predicate fields and evaluate the rule
-        var predicateMapQueries = [];
-        var predicateMapPassed = [];
-        async.each(rule.ruleConditionalStatements, function (ruleConditionalStatement, cbPredicates) {
-          var field = fieldMap[ruleConditionalStatement.sourceField];
-          var passed = false;
-          var submissionValues = [];
-          var condition;
-          var testValue;
-          if (submissionFieldsMap[ruleConditionalStatement.sourceField] && submissionFieldsMap[ruleConditionalStatement.sourceField].fieldValues) {
-            submissionValues = submissionFieldsMap[ruleConditionalStatement.sourceField].fieldValues;
-            condition = ruleConditionalStatement.restriction;
-            testValue = ruleConditionalStatement.sourceValue;
-
-            // Validate rule predictes on the first entry only.
-            passed = isConditionActive(field, submissionValues[0], testValue, condition);
-          }
-          predicateMapQueries.push({
-            "field": field,
-            "submissionValues": submissionValues,
-            "condition": condition,
-            "testValue": testValue,
-            "passed": passed
-          });
-
-          if (passed) {
-            predicateMapPassed.push(field);
-          }
-          return cbPredicates();
-        }, function (err) {
-          if (err) cbRule(err);
-
-          function rulesPassed(condition, passed, queries) {
-            return ((condition === "and") && ((passed.length == queries.length))) || // "and" condition - all rules must pass
-              ((condition === "or") && ((passed.length > 0))); // "or" condition - only one rule must pass
-          }
-
-          if (rulesPassed(rule.ruleConditionalOperator, predicateMapPassed, predicateMapQueries)) {
-            visible = (rule.type === "show");
-          } else {
-            visible = (rule.type !== "show");
-          }
-          return cbRule();
-        });
-      }, function (err) {
-        if (err) return cb(err);
-
-        return cb(undefined, visible);
-      });
-    }
-
-    function isPageVisible(pageId, cb) {
-      init(function (err) {
-        if (err) return cb(err);
-
-        if (isPageRuleSubject(pageId)) { // if the page is the target of a rule
-          return rulesResult(pageRuleSubjectMap[pageId], cb); // execute page rules
-        } else {
-          return cb(undefined, true); // if page is not subject of any rule then must be visible
-        }
-      });
-    }
-
-    function isFieldVisible(fieldId, checkContainingPage, cb) {
-      /*
-       * fieldId = Id of field to check for reule predeciate references
-       * checkContainingPage = if true check page containing field, and return false if the page is hidden
-       */
-      init(function (err) {
-        if (err) return cb(err);
-
-        // Fields are visable by default
-        var visible = true;
-
-        var field = fieldMap[fieldId];
-        if (!fieldId) return cb(new Error("Field does not exist in form"));
-
-        async.waterfall([
-
-          function testPage(cb) {
-            if (checkContainingPage) {
-              isPageVisible(field.pageId, cb);
-            } else {
-              return cb(undefined, true);
-            }
-          },
-          function testField(pageVisible, cb) {
-            if (!pageVisible) { // if page containing field is not visible then don't need to check field
-              return cb(undefined, false);
-            }
-
-            if (isFieldRuleSubject(fieldId)) { // If the field is the subject of a rule it may have been hidden
-              return rulesResult(fieldRuleSubjectMap[fieldId], cb); // execute field rules
-            } else {
-              return cb(undefined, true); // if not subject of field rules then can't be hidden
-            }
-          }
-        ], cb);
-      });
-    }
-
-    /*
-     * check all rules actions
+     * Sample Usage
+     *
+     * var engine = formsRulesEngine(form-definition);
+     *
+     * engine.validateForms(form-submission, function(err, res) {});
+     *      res:
+     *      {
+     *          "validation": {
+     *              "fieldId": {
+     *                  "fieldId": "",
+     *                  "valid": true,
+     *                  "errorMessages": [
+     *                      "length should be 3 to 5",
+     *                      "should not contain dammit",
+     *                      "should repeat at least 2 times"
+     *                  ]
+     *              },
+     *              "fieldId1": {
+     *
+     *              }
+     *          }
+     *      }
+     *
+     *
+     * engine.validateField(fieldId, submissionJSON, function(err,res) {});
+     *      // validate only field values on validation (no rules, no repeat checking)
+     *      res:
+     *      "validation":{
+     *              "fieldId":{
+     *                  "fieldId":"",
+     *                  "valid":true,
+     *                  "errorMessages":[
+     *                      "length should be 3 to 5",
+     *                      "should not contain dammit"
+     *                  ]
+     *              }
+     *          }
+     *
+     * engine.checkRules(submissionJSON, unction(err, res) {})
+     *      // check all rules actions
      *      res:
      *      {
      *          "actions": {
@@ -20761,243 +20008,1484 @@ function rulesEngine (formDef) {
      *                  }
      *              },
      *              "fields": {
+     *
      *              }
      *          }
      *      }
+     *
      */
-    function checkRules(submissionJSON, cb) {
-      init(function (err) {
-        if (err) return cb(err);
 
-        initSubmission(submissionJSON, function (err) {
-          if (err) return cb(err);
-          var actions = {};
+    var FIELD_TYPE_CHECKBOX = "checkboxes";
+    var FIELD_TYPE_DATETIME = "dateTime";
+    var FIELD_TYPE_DATETIME_DATETIMEUNIT_DATEONLY = "date";
+    var FIELD_TYPE_DATETIME_DATETIMEUNIT_TIMEONLY = "time";
+    var FIELD_TYPE_DATETIME_DATETIMEUNIT_DATETIME = "datetime";
 
-          async.parallel([
+    var formsRulesEngine = function (formDef) {
+      var initialised;
 
-            function (cb) {
-              actions.fields = {};
-              async.eachSeries(Object.keys(fieldRuleSubjectMap), function (fieldId, cb) {
-                isFieldVisible(fieldId, false, function (err, fieldVisible) {
-                  if (err) return cb(err);
-                  actions.fields[fieldId] = {
-                    targetId: fieldId,
-                    action: (fieldVisible ? "show" : "hide")
-                  };
-                  return cb();
-                });
-              }, cb);
-            },
-            function (cb) {
-              actions.pages = {};
-              async.eachSeries(Object.keys(pageRuleSubjectMap), function (pageId, cb) {
-                isPageVisible(pageId, function (err, pageVisible) {
-                  if (err) return cb(err);
-                  actions.pages[pageId] = {
-                    targetId: pageId,
-                    action: (pageVisible ? "show" : "hide")
-                  };
-                  return cb();
-                });
-              }, cb);
+      var definition = formDef;
+      var submission;
+
+      var fieldMap = {};
+      var adminFieldMap ={}; //Admin fields should not be part of a submission
+      var requiredFieldMap = {};
+      var submissionRequiredFieldsMap = {}; // map to hold the status of the required fields per submission
+      var fieldRulePredicateMap = {};
+      var fieldRuleSubjectMap = {};
+      var pageRulePredicateMap = {};
+      var pageRuleSubjectMap = {};
+      var submissionFieldsMap = {};
+      var validatorsMap = {
+        "text": validatorString,
+        "textarea": validatorString,
+        "number": validatorNumericString,
+        "emailAddress": validatorEmail,
+        "dropdown": validatorDropDown,
+        "radio": validatorDropDown,
+        "checkboxes": validatorCheckboxes,
+        "location": validatorLocation,
+        "locationMap": validatorLocationMap,
+        "photo": validatorFile,
+        "signature": validatorFile,
+        "file": validatorFile,
+        "dateTime": validatorDateTime,
+        "url": validatorString,
+        "sectionBreak": validatorSection
+      };
+
+      var validatorsClientMap = {
+        "text": validatorString,
+        "textarea": validatorString,
+        "number": validatorNumericString,
+        "emailAddress": validatorEmail,
+        "dropdown": validatorDropDown,
+        "radio": validatorDropDown,
+        "checkboxes": validatorCheckboxes,
+        "location": validatorLocation,
+        "locationMap": validatorLocationMap,
+        "photo": validatorAnyFile,
+        "signature": validatorAnyFile,
+        "file": validatorAnyFile,
+        "dateTime": validatorDateTime,
+        "url": validatorString,
+        "sectionBreak": validatorSection
+      };
+
+      var isFieldRuleSubject = function (fieldId) {
+        return !!fieldRuleSubjectMap[fieldId];
+      };
+
+      var isPageRuleSubject = function (pageId) {
+        return !!pageRuleSubjectMap[pageId];
+      };
+
+      function buildFieldMap(cb) {
+        // Iterate over all fields in form definition & build fieldMap
+        async.each(definition.pages, function (page, cbPages) {
+          async.each(page.fields, function (field, cbFields) {
+            field.pageId = page._id;
+
+            /**
+             * If the field is an admin field, then it is not considered part of validation for a submission.
+             */
+            if(field.adminOnly){
+              adminFieldMap[field._id] = field;
+              return cbFields();
             }
-          ], function (err) {
+
+            field.fieldOptions = field.fieldOptions ? field.fieldOptions : {};
+            field.fieldOptions.definition = field.fieldOptions.definition ? field.fieldOptions.definition : {};
+            field.fieldOptions.validation = field.fieldOptions.validation ? field.fieldOptions.validation : {};
+
+            fieldMap[field._id] = field;
+            if (field.required) {
+              requiredFieldMap[field._id] = {
+                field: field,
+                submitted: false,
+                validated: false
+              };
+            }
+            return cbFields();
+          }, function () {
+            return cbPages();
+          });
+        }, cb);
+      }
+
+      function buildFieldRuleMaps(cb) {
+        // Iterate over all rules in form definition & build ruleSubjectMap
+        async.each(definition.fieldRules, function (rule, cbRules) {
+          async.each(rule.ruleConditionalStatements, function (ruleConditionalStatement, cbRuleConditionalStatements) {
+            var fieldId = ruleConditionalStatement.sourceField;
+            fieldRulePredicateMap[fieldId] = fieldRulePredicateMap[fieldId] || [];
+            fieldRulePredicateMap[fieldId].push(rule);
+            return cbRuleConditionalStatements();
+          }, function () {
+
+            /**
+             * Target fields are an array of fieldIds that can be targeted by a field rule
+             * To maintain backwards compatibility, the case where the targetPage is not an array has to be considered
+             * @type {*|Array}
+             */
+            if(Array.isArray(rule.targetField)){
+              async.each(rule.targetField, function(targetField, cb){
+                fieldRuleSubjectMap[targetField] = fieldRuleSubjectMap[targetField] || [];
+                fieldRuleSubjectMap[targetField].push(rule);
+                cb();
+              }, cbRules);
+            } else {
+              fieldRuleSubjectMap[rule.targetField] = fieldRuleSubjectMap[rule.targetField] || [];
+              fieldRuleSubjectMap[rule.targetField].push(rule);
+              return cbRules();
+            }
+          });
+        }, cb);
+      }
+
+      function buildPageRuleMap(cb) {
+        // Iterate over all rules in form definition & build ruleSubjectMap
+        async.each(definition.pageRules, function (rule, cbRules) {
+          async.each(rule.ruleConditionalStatements, function (ruleConditionalStatement, cbRulePredicates) {
+            var fieldId = ruleConditionalStatement.sourceField;
+            pageRulePredicateMap[fieldId] = pageRulePredicateMap[fieldId] || [];
+            pageRulePredicateMap[fieldId].push(rule);
+            return cbRulePredicates();
+          }, function () {
+
+            /**
+             * Target pages are an array of pageIds that can be targeted by a page rule
+             * To maintain backwards compatibility, the case where the targetPage is not an array has to be considered
+             * @type {*|Array}
+             */
+            if(Array.isArray(rule.targetPage)){
+              async.each(rule.targetPage, function(targetPage, cb){
+                pageRuleSubjectMap[targetPage] = pageRuleSubjectMap[targetPage] || [];
+                pageRuleSubjectMap[targetPage].push(rule);
+                cb();
+              }, cbRules);
+            } else {
+              pageRuleSubjectMap[rule.targetPage] = pageRuleSubjectMap[rule.targetPage] || [];
+              pageRuleSubjectMap[rule.targetPage].push(rule);
+              return cbRules();
+            }
+          });
+        }, cb);
+      }
+
+      function buildSubmissionFieldsMap(cb) {
+        submissionRequiredFieldsMap = JSON.parse(JSON.stringify(requiredFieldMap)); // clone the map for use with this submission
+        submissionFieldsMap = {}; // start with empty map, rulesEngine can be called with multiple submissions
+
+        // iterate over all the fields in the submissions and build a map for easier lookup
+        async.each(submission.formFields, function (formField, cb) {
+          if (!formField.fieldId) return cb(new Error("No fieldId in this submission entry: " + util.inspect(formField)));
+
+          /**
+           * If the field passed in a submission is an admin field, then return an error.
+           */
+          if(adminFieldMap[formField.fieldId]){
+            return cb("Submission " + formField.fieldId + " is an admin field. Admin fields cannot be passed to the rules engine.");
+          }
+
+          submissionFieldsMap[formField.fieldId] = formField;
+          return cb();
+        }, cb);
+      }
+
+      function init(cb) {
+        if (initialised) return cb();
+        async.parallel([
+          buildFieldMap,
+          buildFieldRuleMaps,
+          buildPageRuleMap
+        ], function (err) {
+          if (err) return cb(err);
+          initialised = true;
+          return cb();
+        });
+      }
+
+      function initSubmission(formSubmission, cb) {
+        init(function (err) {
+          if (err) return cb(err);
+
+          submission = formSubmission;
+          buildSubmissionFieldsMap(cb);
+        });
+      }
+
+      function getPreviousFieldValues(submittedField, previousSubmission, cb) {
+        if (previousSubmission && previousSubmission.formFields) {
+          async.filter(previousSubmission.formFields, function (formField, cb) {
+            return cb(formField.fieldId.toString() === submittedField.fieldId.toString());
+          }, function (results) {
+            var previousFieldValues = null;
+            if (results && results[0] && results[0].fieldValues) {
+              previousFieldValues = results[0].fieldValues;
+            }
+            return cb(undefined, previousFieldValues);
+          });
+        } else {
+          return cb();
+        }
+      }
+
+      function validateForm(submission, previousSubmission, cb) {
+        if ("function" === typeof previousSubmission) {
+          cb = previousSubmission;
+          previousSubmission = null;
+        }
+        init(function (err) {
+          if (err) return cb(err);
+
+          initSubmission(submission, function (err) {
             if (err) return cb(err);
 
-            return cb(undefined, {
-              actions: actions
+            async.waterfall([
+
+              function (cb) {
+                return cb(undefined, {
+                  validation: {
+                    valid: true
+                  }
+                }); // any invalid fields will set this to false
+              },
+              function (res, cb) {
+                validateSubmittedFields(res, previousSubmission, cb);
+              },
+              checkIfRequiredFieldsNotSubmitted
+            ], function (err, results) {
+              if (err) return cb(err);
+
+              return cb(undefined, results);
             });
           });
         });
-      });
-    }
+      }
 
-    return {
-      validateForm: validateForm,
-      validateField: validateField,
-      validateFieldValue: validateFieldValue,
-      checkRules: checkRules,
+      function validateSubmittedFields(res, previousSubmission, cb) {
+        // for each field, call validateField
+        async.each(submission.formFields, function (submittedField, callback) {
+          var fieldID = submittedField.fieldId;
+          var fieldDef = fieldMap[fieldID];
 
-      // The following are used internally, but exposed for tests
-      validateFieldInternal: validateFieldInternal,
-      initSubmission: initSubmission,
-      isFieldVisible: isFieldVisible,
-      isConditionActive: isConditionActive
+          getPreviousFieldValues(submittedField, previousSubmission, function (err, previousFieldValues) {
+            if (err) return callback(err);
+            getFieldValidationStatus(submittedField, fieldDef, previousFieldValues, function (err, fieldRes) {
+              if (err) return callback(err);
+
+              if (!fieldRes.valid) {
+                res.validation.valid = false; // indicate invalid form if any fields invalid
+                res.validation[fieldID] = fieldRes; // add invalid field info to validate form result
+              }
+
+              return callback();
+            });
+
+          });
+        }, function (err) {
+          if (err) {
+            return cb(err);
+          }
+          return cb(undefined, res);
+        });
+      }
+
+      function checkIfRequiredFieldsNotSubmitted(res, cb) {
+        async.each(Object.keys(submissionRequiredFieldsMap), function (requiredFieldId, cb) {
+          var resField = {};
+          if (!submissionRequiredFieldsMap[requiredFieldId].submitted) {
+            isFieldVisible(requiredFieldId, true, function (err, visible) {
+              if (err) return cb(err);
+              if (visible) { // we only care about required fields if they are visible
+                resField.fieldId = requiredFieldId;
+                resField.valid = false;
+                resField.fieldErrorMessage = ["Required Field Not Submitted"];
+                res.validation[requiredFieldId] = resField;
+                res.validation.valid = false;
+              }
+              return cb();
+            });
+          } else { // was included in submission
+            return cb();
+          }
+        }, function (err) {
+          if (err) return cb(err);
+
+          return cb(undefined, res);
+        });
+      }
+
+      /*
+       * validate only field values on validation (no rules, no repeat checking)
+       *     res:
+       *     "validation":{
+       *             "fieldId":{
+       *                 "fieldId":"",
+       *                 "valid":true,
+       *                 "errorMessages":[
+       *                     "length should be 3 to 5",
+       *                     "should not contain dammit"
+       *                 ]
+       *             }
+       *         }
+       */
+      function validateField(fieldId, submission, cb) {
+        init(function (err) {
+          if (err) return cb(err);
+
+          initSubmission(submission, function (err) {
+            if (err) return cb(err);
+
+            var submissionField = submissionFieldsMap[fieldId];
+            var fieldDef = fieldMap[fieldId];
+            getFieldValidationStatus(submissionField, fieldDef, null, function (err, res) {
+              if (err) return cb(err);
+              var ret = {
+                validation: {}
+              };
+              ret.validation[fieldId] = res;
+              return cb(undefined, ret);
+            });
+          });
+        });
+      }
+
+      /*
+       * validate only single field value (no rules, no repeat checking)
+       * cb(err, result)
+       * example of result:
+       * "validation":{
+       *         "fieldId":{
+       *             "fieldId":"",
+       *             "valid":true,
+       *             "errorMessages":[
+       *                 "length should be 3 to 5",
+       *                 "should not contain dammit"
+       *             ]
+       *         }
+       *     }
+       */
+      function validateFieldValue(fieldId, inputValue, valueIndex, cb) {
+        if ("function" === typeof valueIndex) {
+          cb = valueIndex;
+          valueIndex = 0;
+        }
+
+        init(function (err) {
+          if (err) return cb(err);
+          var fieldDefinition = fieldMap[fieldId];
+
+          var required = false;
+          if (fieldDefinition.repeating &&
+            fieldDefinition.fieldOptions &&
+            fieldDefinition.fieldOptions.definition &&
+            fieldDefinition.fieldOptions.definition.minRepeat) {
+            required = (valueIndex < fieldDefinition.fieldOptions.definition.minRepeat);
+          } else {
+            required = fieldDefinition.required;
+          }
+
+          var validation = (fieldDefinition.fieldOptions && fieldDefinition.fieldOptions.validation) ? fieldDefinition.fieldOptions.validation : undefined;
+
+          if (validation && false === validation.validateImmediately) {
+            var ret = {
+              validation: {}
+            };
+            ret.validation[fieldId] = {
+              "valid": true
+            };
+            return cb(undefined, ret);
+          }
+
+          if (fieldEmpty(inputValue)) {
+            if (required) {
+              return formatResponse("No value specified for required input", cb);
+            } else {
+              return formatResponse(undefined, cb); // optional field not supplied is valid
+            }
+          }
+
+          // not empty need to validate
+          getClientValidatorFunction(fieldDefinition.type, function (err, validator) {
+            if (err) return cb(err);
+
+            validator(inputValue, fieldDefinition, undefined, function (err) {
+              var message;
+              if (err) {
+                if (err.message) {
+                  message = err.message;
+                } else {
+                  message = "Unknown error message";
+                }
+              }
+              formatResponse(message, cb);
+            });
+          });
+        });
+
+        function formatResponse(msg, cb) {
+          var messages = {
+            errorMessages: []
+          };
+          if (msg) {
+            messages.errorMessages.push(msg);
+          }
+          return createValidatorResponse(fieldId, messages, function (err, res) {
+            if (err) return cb(err);
+            var ret = {
+              validation: {}
+            };
+            ret.validation[fieldId] = res;
+            return cb(undefined, ret);
+          });
+        }
+      }
+
+      function createValidatorResponse(fieldId, messages, cb) {
+        // intentionally not checking err here, used further down to get validation errors
+        var res = {};
+        res.fieldId = fieldId;
+        res.errorMessages = messages.errorMessages || [];
+        res.fieldErrorMessage = messages.fieldErrorMessage || [];
+        async.some(res.errorMessages, function (item, cb) {
+          return cb(item !== null);
+        }, function (someErrors) {
+          res.valid = !someErrors && (res.fieldErrorMessage.length < 1);
+
+          return cb(undefined, res);
+        });
+      }
+
+      function getFieldValidationStatus(submittedField, fieldDef, previousFieldValues, cb) {
+        isFieldVisible(fieldDef._id, true, function(err, visible){
+          if(err){
+            return cb(err);
+          }
+          validateFieldInternal(submittedField, fieldDef, previousFieldValues, visible, function (err, messages) {
+            if (err) return cb(err);
+            createValidatorResponse(submittedField.fieldId, messages, cb);
+          });
+        });
+      }
+
+      function getMapFunction(key, map, cb) {
+        var validator = map[key];
+        if (!validator) {
+          return cb(new Error("Invalid Field Type " + key));
+        }
+
+        return cb(undefined, validator);
+      }
+
+      function getValidatorFunction(fieldType, cb) {
+        return getMapFunction(fieldType, validatorsMap, cb);
+      }
+
+      function getClientValidatorFunction(fieldType, cb) {
+        return getMapFunction(fieldType, validatorsClientMap, cb);
+      }
+
+      function fieldEmpty(fieldValue) {
+        return ('undefined' === typeof fieldValue || null === fieldValue || "" === fieldValue); // empty string also regarded as not specified
+      }
+
+      function validateFieldInternal(submittedField, fieldDef, previousFieldValues, visible, cb) {
+        previousFieldValues = previousFieldValues || null;
+        countSubmittedValues(submittedField, function (err, numSubmittedValues) {
+          if (err) return cb(err);
+          async.series({
+            valuesSubmitted: async.apply(checkValueSubmitted, submittedField, fieldDef, visible),
+            repeats: async.apply(checkRepeat, numSubmittedValues, fieldDef, visible),
+            values: async.apply(checkValues, submittedField, fieldDef, previousFieldValues)
+          }, function (err, results) {
+            if (err) return cb(err);
+
+            var fieldErrorMessages = [];
+            if (results.valuesSubmitted) {
+              fieldErrorMessages.push(results.valuesSubmitted);
+            }
+            if (results.repeats) {
+              fieldErrorMessages.push(results.repeats);
+            }
+            return cb(undefined, {
+              fieldErrorMessage: fieldErrorMessages,
+              errorMessages: results.values
+            });
+          });
+        });
+
+        return; // just functions below this
+
+        function checkValueSubmitted(submittedField, fieldDefinition, visible, cb) {
+          if (!fieldDefinition.required) return cb(undefined, null);
+
+          var valueSubmitted = submittedField && submittedField.fieldValues && (submittedField.fieldValues.length > 0);
+          //No value submitted is only an error if the field is visible.
+          if (!valueSubmitted && visible) {
+            return cb(undefined, "No value submitted for field " + fieldDefinition.name);
+          }
+          return cb(undefined, null);
+
+        }
+
+        function countSubmittedValues(submittedField, cb) {
+          var numSubmittedValues = 0;
+          if (submittedField && submittedField.fieldValues && submittedField.fieldValues.length > 0) {
+            for (var i = 0; i < submittedField.fieldValues.length; i += 1) {
+              if (submittedField.fieldValues[i]) {
+                numSubmittedValues += 1;
+              }
+            }
+          }
+          return cb(undefined, numSubmittedValues);
+        }
+
+        function checkRepeat(numSubmittedValues, fieldDefinition, visible, cb) {
+          //If the field is not visible, then checking the repeating values of the field is not required
+          if(!visible){
+            return cb(undefined, null);
+          }
+
+          if (fieldDefinition.repeating && fieldDefinition.fieldOptions && fieldDefinition.fieldOptions.definition) {
+            if (fieldDefinition.fieldOptions.definition.minRepeat) {
+              if (numSubmittedValues < fieldDefinition.fieldOptions.definition.minRepeat) {
+                return cb(undefined, "Expected min of " + fieldDefinition.fieldOptions.definition.minRepeat + " values for field " + fieldDefinition.name + " but got " + numSubmittedValues);
+              }
+            }
+
+            if (fieldDefinition.fieldOptions.definition.maxRepeat) {
+              if (numSubmittedValues > fieldDefinition.fieldOptions.definition.maxRepeat) {
+                return cb(undefined, "Expected max of " + fieldDefinition.fieldOptions.definition.maxRepeat + " values for field " + fieldDefinition.name + " but got " + numSubmittedValues);
+              }
+            }
+          } else {
+            if (numSubmittedValues > 1) {
+              return cb(undefined, "Should not have multiple values for non-repeating field");
+            }
+          }
+
+          return cb(undefined, null);
+        }
+
+        function checkValues(submittedField, fieldDefinition, previousFieldValues, cb) {
+          getValidatorFunction(fieldDefinition.type, function (err, validator) {
+            if (err) return cb(err);
+            async.map(submittedField.fieldValues, function (fieldValue, cb) {
+              if (fieldEmpty(fieldValue)) {
+                return cb(undefined, null);
+              } else {
+                validator(fieldValue, fieldDefinition, previousFieldValues, function (validationError) {
+                  var errorMessage;
+                  if (validationError) {
+                    errorMessage = validationError.message || "Error during validation of field";
+                  } else {
+                    errorMessage = null;
+                  }
+
+                  if (submissionRequiredFieldsMap[fieldDefinition._id]) { // set to true if at least one value
+                    submissionRequiredFieldsMap[fieldDefinition._id].submitted = true;
+                  }
+
+                  return cb(undefined, errorMessage);
+                });
+              }
+            }, function (err, results) {
+              if (err) return cb(err);
+
+              return cb(undefined, results);
+            });
+          });
+        }
+      }
+
+      function convertSimpleFormatToRegex(field_format_string) {
+        var regex = "^";
+        var C = "c".charCodeAt(0);
+        var N = "n".charCodeAt(0);
+
+        var i;
+        var ch;
+        var match;
+        var len = field_format_string.length;
+        for (i = 0; i < len; i += 1) {
+          ch = field_format_string.charCodeAt(i);
+          switch (ch) {
+            case C:
+              match = "[a-zA-Z0-9]";
+              break;
+            case N:
+              match = "[0-9]";
+              break;
+            default:
+              var num = ch.toString(16).toUpperCase();
+              match = "\\u" + ("0000" + num).substr(-4);
+              break;
+          }
+          regex += match;
+        }
+        return regex + "$";
+      }
+
+      function validFormatRegex(fieldValue, field_format_string) {
+        var pattern = new RegExp(field_format_string);
+        return pattern.test(fieldValue);
+      }
+
+      function validFormat(fieldValue, field_format_mode, field_format_string) {
+        var regex;
+        if ("simple" === field_format_mode) {
+          regex = convertSimpleFormatToRegex(field_format_string);
+        } else if ("regex" === field_format_mode) {
+          regex = field_format_string;
+        } else { // should never be anything else, but if it is then default to simple format
+          regex = convertSimpleFormatToRegex(field_format_string);
+        }
+
+        return validFormatRegex(fieldValue, regex);
+      }
+
+      function validatorString(fieldValue, fieldDefinition, previousFieldValues, cb) {
+        if (typeof fieldValue !== "string") {
+          return cb(new Error("Expected string but got " + typeof(fieldValue)));
+        }
+
+        var validation = {};
+        if (fieldDefinition && fieldDefinition.fieldOptions && fieldDefinition.fieldOptions.validation) {
+          validation = fieldDefinition.fieldOptions.validation;
+        }
+
+        var field_format_mode = validation.field_format_mode || "";
+        field_format_mode = field_format_mode.trim();
+        var field_format_string = validation.field_format_string || "";
+        field_format_string = field_format_string.trim();
+
+        if (field_format_string && (field_format_string.length > 0) && field_format_mode && (field_format_mode.length > 0)) {
+          if (!validFormat(fieldValue, field_format_mode, field_format_string)) {
+            return cb(new Error("field value in incorrect format, expected format: " + field_format_string + " but submission value is: " + fieldValue));
+          }
+        }
+
+        if (fieldDefinition.fieldOptions && fieldDefinition.fieldOptions.validation && fieldDefinition.fieldOptions.validation.min) {
+          if (fieldValue.length < fieldDefinition.fieldOptions.validation.min) {
+            return cb(new Error("Expected minimum string length of " + fieldDefinition.fieldOptions.validation.min + " but submission is " + fieldValue.length + ". Submitted val: " + fieldValue));
+          }
+        }
+
+        if (fieldDefinition.fieldOptions && fieldDefinition.fieldOptions.validation && fieldDefinition.fieldOptions.validation.max) {
+          if (fieldValue.length > fieldDefinition.fieldOptions.validation.max) {
+            return cb(new Error("Expected maximum string length of " + fieldDefinition.fieldOptions.validation.max + " but submission is " + fieldValue.length + ". Submitted val: " + fieldValue));
+          }
+        }
+
+        return cb();
+      }
+
+      function validatorNumericString(fieldValue, fieldDefinition, previousFieldValues, cb) {
+        var testVal = (fieldValue - 0); // coerce to number (or NaN)
+        /*jshint eqeqeq:false */
+        var numeric = (testVal == fieldValue); // testVal co-erced to numeric above, so numeric comparison and NaN != NaN
+
+        if (!numeric) {
+          return cb(new Error("Expected numeric but got: " + fieldValue));
+        }
+
+        return validatorNumber(testVal, fieldDefinition, previousFieldValues, cb);
+      }
+
+      function validatorNumber(fieldValue, fieldDefinition, previousFieldValues, cb) {
+        if (typeof fieldValue !== "number") {
+          return cb(new Error("Expected number but got " + typeof(fieldValue)));
+        }
+
+        if (fieldDefinition.fieldOptions && fieldDefinition.fieldOptions.validation && fieldDefinition.fieldOptions.validation.min) {
+          if (fieldValue < fieldDefinition.fieldOptions.validation.min) {
+            return cb(new Error("Expected minimum Number " + fieldDefinition.fieldOptions.validation.min + " but submission is " + fieldValue + ". Submitted number: " + fieldValue));
+          }
+        }
+
+        if (fieldDefinition.fieldOptions.validation.max) {
+          if (fieldValue > fieldDefinition.fieldOptions.validation.max) {
+            return cb(new Error("Expected maximum Number " + fieldDefinition.fieldOptions.validation.max + " but submission is " + fieldValue + ". Submitted number: " + fieldValue));
+          }
+        }
+
+        return cb();
+      }
+
+      function validatorEmail(fieldValue, fieldDefinition, previousFieldValues, cb) {
+        if (typeof(fieldValue) !== "string") {
+          return cb(new Error("Expected string but got " + typeof(fieldValue)));
+        }
+
+        if (fieldValue.match(/[-0-9a-zA-Z.+_]+@[-0-9a-zA-Z.+_]+\.[a-zA-Z]{2,4}/g) === null) {
+          return cb(new Error("Invalid email address format: " + fieldValue));
+        } else {
+          return cb();
+        }
+      }
+
+      function validatorDropDown(fieldValue, fieldDefinition, previousFieldValues, cb) {
+        if (typeof(fieldValue) !== "string") {
+          return cb(new Error("Expected submission to be string but got " + typeof(fieldValue)));
+        }
+
+        //Check value exists in the field definition
+        if (!fieldDefinition.fieldOptions.definition.options) {
+          return cb(new Error("No options exist for field " + fieldDefinition.name));
+        }
+
+        async.some(fieldDefinition.fieldOptions.definition.options, function (dropdownOption, cb) {
+          return cb(dropdownOption.label === fieldValue);
+        }, function (found) {
+          if (!found) {
+            return cb(new Error("Invalid option specified: " + fieldValue));
+          } else {
+            return cb();
+          }
+        });
+      }
+
+      function validatorCheckboxes(fieldValue, fieldDefinition, previousFieldValues, cb) {
+        var minVal;
+        if (fieldDefinition && fieldDefinition.fieldOptions && fieldDefinition.fieldOptions.validation) {
+          minVal = fieldDefinition.fieldOptions.validation.min;
+        }
+        var maxVal;
+        if (fieldDefinition && fieldDefinition.fieldOptions && fieldDefinition.fieldOptions.validation) {
+          maxVal = fieldDefinition.fieldOptions.validation.max;
+        }
+
+        if (minVal) {
+          if (fieldValue.selections === null || fieldValue.selections === undefined || fieldValue.selections.length < minVal) {
+            var len;
+            if (fieldValue.selections) {
+              len = fieldValue.selections.length;
+            }
+            return cb(new Error("Expected a minimum number of selections " + minVal + " but got " + len));
+          }
+        }
+
+        if (maxVal) {
+          if (fieldValue.selections) {
+            if (fieldValue.selections.length > maxVal) {
+              return cb(new Error("Expected a maximum number of selections " + maxVal + " but got " + fieldValue.selections.length));
+            }
+          }
+        }
+
+        var optionsInCheckbox = [];
+
+        async.eachSeries(fieldDefinition.fieldOptions.definition.options, function (choice, cb) {
+          for (var choiceName in choice) {
+            optionsInCheckbox.push(choice[choiceName]);
+          }
+          return cb();
+        }, function () {
+          async.eachSeries(fieldValue.selections, function (selection, cb) {
+            if (typeof(selection) !== "string") {
+              return cb(new Error("Expected checkbox submission to be string but got " + typeof(selection)));
+            }
+
+            if (optionsInCheckbox.indexOf(selection) === -1) {
+              return cb(new Error("Checkbox Option " + selection + " does not exist in the field."));
+            }
+
+            return cb();
+          }, cb);
+        });
+      }
+
+      function validatorLocationMap(fieldValue, fieldDefinition, previousFieldValues, cb) {
+        if (fieldValue.lat && fieldValue["long"]) {
+          if (isNaN(parseFloat(fieldValue.lat)) || isNaN(parseFloat(fieldValue["long"]))) {
+            return cb(new Error("Invalid latitude and longitude values"));
+          } else {
+            return cb();
+          }
+        } else {
+          return cb(new Error("Invalid object for locationMap submission"));
+        }
+      }
+
+
+      function validatorLocation(fieldValue, fieldDefinition, previousFieldValues, cb) {
+        if (fieldDefinition.fieldOptions.definition.locationUnit === "latlong") {
+          if (fieldValue.lat && fieldValue["long"]) {
+            if (isNaN(parseFloat(fieldValue.lat)) || isNaN(parseFloat(fieldValue["long"]))) {
+              return cb(new Error("Invalid latitude and longitude values"));
+            } else {
+              return cb();
+            }
+          } else {
+            return cb(new Error("Invalid object for latitude longitude submission"));
+          }
+        } else {
+          if (fieldValue.zone && fieldValue.eastings && fieldValue.northings) {
+            //Zone must be 3 characters, eastings 6 and northings 9
+            return validateNorthingsEastings(fieldValue, cb);
+          } else {
+            return cb(new Error("Invalid object for northings easting submission. Zone, Eastings and Northings elemets are required"));
+          }
+        }
+
+        function validateNorthingsEastings(fieldValue, cb) {
+          if (typeof(fieldValue.zone) !== "string" || fieldValue.zone.length === 0) {
+            return cb(new Error("Invalid zone definition for northings and eastings location. " + fieldValue.zone));
+          }
+
+          var east = parseInt(fieldValue.eastings, 10);
+          if (isNaN(east)) {
+            return cb(new Error("Invalid eastings definition for northings and eastings location. " + fieldValue.eastings));
+          }
+
+          var north = parseInt(fieldValue.northings, 10);
+          if (isNaN(north)) {
+            return cb(new Error("Invalid northings definition for northings and eastings location. " + fieldValue.northings));
+          }
+
+          return cb();
+        }
+      }
+
+      function validatorAnyFile(fieldValue, fieldDefinition, previousFieldValues, cb) {
+        // if any of the following validators return ok, then return ok.
+        validatorBase64(fieldValue, fieldDefinition, previousFieldValues, function (err) {
+          if (!err) {
+            return cb();
+          }
+          validatorFile(fieldValue, fieldDefinition, previousFieldValues, function (err) {
+            if (!err) {
+              return cb();
+            }
+            validatorFileObj(fieldValue, fieldDefinition, previousFieldValues, function (err) {
+              if (!err) {
+                return cb();
+              }
+              return cb(err);
+            });
+          });
+        });
+      }
+
+      function checkFileSize(fieldDefinition, fieldValue, sizeKey, cb) {
+        fieldDefinition = fieldDefinition || {};
+        var fieldOptions = fieldDefinition.fieldOptions || {};
+        var fieldOptionsDef = fieldOptions.definition || {};
+        var fileSizeMax = fieldOptionsDef.file_size || null; //FileSizeMax will be in KB. File size is in bytes
+
+        if (fileSizeMax !== null) {
+          var fieldValueSize = fieldValue[sizeKey];
+          var fieldValueSizeKB = 1;
+          if (fieldValueSize > 1000) {
+            fieldValueSizeKB = fieldValueSize / 1000;
+          }
+          if (fieldValueSize > (fileSizeMax * 1000)) {
+            return cb(new Error("File size is too large. File can be a maximum of " + fileSizeMax + "KB. Size of file selected: " + fieldValueSizeKB + "KB"));
+          } else {
+            return cb();
+          }
+        } else {
+          return cb();
+        }
+      }
+
+      function validatorFile(fieldValue, fieldDefinition, previousFieldValues, cb) {
+        if (typeof fieldValue !== "object") {
+          return cb(new Error("Expected object but got " + typeof(fieldValue)));
+        }
+
+        var keyTypes = [
+          {
+            keyName: "fileName",
+            valueType: "string"
+          },
+          {
+            keyName: "fileSize",
+            valueType: "number"
+          },
+          {
+            keyName: "fileType",
+            valueType: "string"
+          },
+          {
+            keyName: "fileUpdateTime",
+            valueType: "number"
+          },
+          {
+            keyName: "hashName",
+            valueType: "string"
+          }
+        ];
+
+        async.each(keyTypes, function (keyType, cb) {
+          var actualType = typeof fieldValue[keyType.keyName];
+          if (actualType !== keyType.valueType) {
+            return cb(new Error("Expected " + keyType.valueType + " but got " + actualType));
+          }
+          if (keyType.keyName === "fileName" && fieldValue[keyType.keyName].length <= 0) {
+            return cb(new Error("Expected value for " + keyType.keyName));
+          }
+
+          return cb();
+        }, function (err) {
+          if (err) return cb(err);
+
+          checkFileSize(fieldDefinition, fieldValue, "fileSize", function (err) {
+            if (err) {
+              return cb(err);
+            }
+
+            if (fieldValue.hashName.indexOf("filePlaceHolder") > -1) { //TODO abstract out to config
+              return cb();
+            } else if (previousFieldValues && previousFieldValues.hashName && previousFieldValues.hashName.indexOf(fieldValue.hashName) > -1) {
+              return cb();
+            } else {
+              return cb(new Error("Invalid file placeholder text" + fieldValue.hashName));
+            }
+          });
+        });
+      }
+
+      function validatorFileObj(fieldValue, fieldDefinition, previousFieldValues, cb) {
+        if ((typeof File !== "function")) {
+          return cb(new Error("Expected File object but got " + typeof(fieldValue)));
+        }
+
+        var keyTypes = [
+          {
+            keyName: "name",
+            valueType: "string"
+          },
+          {
+            keyName: "size",
+            valueType: "number"
+          }
+        ];
+
+        async.each(keyTypes, function (keyType, cb) {
+          var actualType = typeof fieldValue[keyType.keyName];
+          if (actualType !== keyType.valueType) {
+            return cb(new Error("Expected " + keyType.valueType + " but got " + actualType));
+          }
+          if (actualType === "string" && fieldValue[keyType.keyName].length <= 0) {
+            return cb(new Error("Expected value for " + keyType.keyName));
+          }
+          if (actualType === "number" && fieldValue[keyType.keyName] <= 0) {
+            return cb(new Error("Expected > 0 value for " + keyType.keyName));
+          }
+
+          return cb();
+        }, function (err) {
+          if (err) return cb(err);
+
+
+          checkFileSize(fieldDefinition, fieldValue, "size", function (err) {
+            if (err) {
+              return cb(err);
+            }
+            return cb();
+          });
+        });
+      }
+
+      function validatorBase64(fieldValue, fieldDefinition, previousFieldValues, cb) {
+        if (typeof fieldValue !== "string") {
+          return cb(new Error("Expected base64 string but got " + typeof(fieldValue)));
+        }
+
+        if (fieldValue.length <= 0) {
+          return cb(new Error("Expected base64 string but was empty"));
+        }
+
+        return cb();
+      }
+
+      function validatorDateTime(fieldValue, fieldDefinition, previousFieldValues, cb) {
+        var testDate;
+        var valid = false;
+        var parts = [];
+
+        if (typeof(fieldValue) !== "string") {
+          return cb(new Error("Expected string but got " + typeof(fieldValue)));
+        }
+
+        switch (fieldDefinition.fieldOptions.definition.datetimeUnit) {
+          case FIELD_TYPE_DATETIME_DATETIMEUNIT_DATEONLY:
+
+            parts = fieldValue.split("/");
+            valid = parts.length === 3;
+
+            if(valid){
+              valid = isNumberBetween(parts[2], 1, 31);
+            }
+
+            if(valid){
+              valid = isNumberBetween(parts[1], 1, 12);
+            }
+
+            if(valid){
+              valid = isNumberBetween(parts[0], 1000, 9999);
+            }
+
+            try {
+              if(valid){
+                testDate = new Date(parts[3], parts[1], parts[0]);
+              } else {
+                testDate = new Date(fieldValue);
+              }
+              valid = (testDate.toString() !== "Invalid Date");
+            } catch (e) {
+              valid = false;
+            }
+
+            if (valid) {
+              return cb();
+            } else {
+              return cb(new Error("Invalid date value " + fieldValue + ". Date format is YYYY/MM/DD"));
+            }
+            break;
+          case FIELD_TYPE_DATETIME_DATETIMEUNIT_TIMEONLY:
+            parts = fieldValue.split(':');
+            valid = (parts.length === 2) || (parts.length === 3);
+            if (valid) {
+              valid = isNumberBetween(parts[0], 0, 23);
+            }
+            if (valid) {
+              valid = isNumberBetween(parts[1], 0, 59);
+            }
+            if (valid && (parts.length === 3)) {
+              valid = isNumberBetween(parts[2], 0, 59);
+            }
+            if (valid) {
+              return cb();
+            } else {
+              return cb(new Error("Invalid time value " + fieldValue + ". Time format is HH:MM:SS"));
+            }
+            break;
+          case FIELD_TYPE_DATETIME_DATETIMEUNIT_DATETIME:
+            parts = fieldValue.split(/[- :]/);
+
+            valid = (parts.length === 6) || (parts.length === 5);
+
+            if(valid){
+              valid = isNumberBetween(parts[2], 1, 31);
+            }
+
+            if(valid){
+              valid = isNumberBetween(parts[1], 1, 12);
+            }
+
+            if(valid){
+              valid = isNumberBetween(parts[0], 1000, 9999);
+            }
+
+            if (valid) {
+              valid = isNumberBetween(parts[3], 0, 23);
+            }
+            if (valid) {
+              valid = isNumberBetween(parts[4], 0, 59);
+            }
+            if (valid && parts.length === 6) {
+              valid = isNumberBetween(parts[5], 0, 59);
+            } else {
+              parts[5] = 0;
+            }
+
+            try {
+              if(valid){
+                testDate = new Date(parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]);
+              } else {
+                testDate = new Date(fieldValue);
+              }
+
+              valid = (testDate.toString() !== "Invalid Date");
+            } catch (e) {
+              valid = false;
+            }
+
+            if(valid){
+              return cb();
+            } else {
+              return cb(new Error("Invalid dateTime string " + fieldValue + ". dateTime format is YYYY/MM/DD HH:MM:SS"));
+            }
+            break;
+          default:
+            return cb(new Error("Invalid dateTime fieldtype " + fieldDefinition.fieldOptions.definition.datetimeUnit));
+        }
+      }
+
+      function validatorSection(value, fieldDefinition, previousFieldValues, cb) {
+        return cb(new Error("Should not submit section field: " + fieldDefinition.name));
+      }
+
+      function rulesResult(rules, cb) {
+        var visible = true;
+
+        // Itterate over each rule that this field is a predicate of
+        async.each(rules, function (rule, cbRule) {
+          // For each rule, itterate over the predicate fields and evaluate the rule
+          var predicateMapQueries = [];
+          var predicateMapPassed = [];
+          async.each(rule.ruleConditionalStatements, function (ruleConditionalStatement, cbPredicates) {
+            var field = fieldMap[ruleConditionalStatement.sourceField];
+            var passed = false;
+            var submissionValues = [];
+            var condition;
+            var testValue;
+            if (submissionFieldsMap[ruleConditionalStatement.sourceField] && submissionFieldsMap[ruleConditionalStatement.sourceField].fieldValues) {
+              submissionValues = submissionFieldsMap[ruleConditionalStatement.sourceField].fieldValues;
+              condition = ruleConditionalStatement.restriction;
+              testValue = ruleConditionalStatement.sourceValue;
+
+              // Validate rule predictes on the first entry only.
+              passed = isConditionActive(field, submissionValues[0], testValue, condition);
+            }
+            predicateMapQueries.push({
+              "field": field,
+              "submissionValues": submissionValues,
+              "condition": condition,
+              "testValue": testValue,
+              "passed": passed
+            });
+
+            if (passed) {
+              predicateMapPassed.push(field);
+            }
+            return cbPredicates();
+          }, function (err) {
+            if (err) cbRule(err);
+
+            function rulesPassed(condition, passed, queries) {
+              return ((condition === "and") && ((passed.length === queries.length))) || // "and" condition - all rules must pass
+                ((condition === "or") && ((passed.length > 0))); // "or" condition - only one rule must pass
+            }
+
+            /**
+             * If any rule condition that targets the field/page hides that field/page, then the page is hidden.
+             * Hiding the field/page takes precedence over any show. This will maintain consistency.
+             * E.g. if x is y then show p1,p2 takes precendence over if x is z then hide p1, p2
+             */
+            if (rulesPassed(rule.ruleConditionalOperator, predicateMapPassed, predicateMapQueries)) {
+              visible = (rule.type === "show") && visible;
+            } else {
+              visible = (rule.type !== "show") && visible;
+            }
+
+            return cbRule();
+          });
+        }, function (err) {
+          if (err) return cb(err);
+
+          return cb(undefined, visible);
+        });
+      }
+
+      function isPageVisible(pageId, cb) {
+        init(function (err) {
+          if (err) return cb(err);
+          if (isPageRuleSubject(pageId)) { // if the page is the target of a rule
+            return rulesResult(pageRuleSubjectMap[pageId], cb); // execute page rules
+          } else {
+            return cb(undefined, true); // if page is not subject of any rule then must be visible
+          }
+        });
+      }
+
+      function isFieldVisible(fieldId, checkContainingPage, cb) {
+        /*
+         * fieldId = Id of field to check for reule predeciate references
+         * checkContainingPage = if true check page containing field, and return false if the page is hidden
+         */
+        init(function (err) {
+          if (err) return cb(err);
+
+          // Fields are visable by default
+          var field = fieldMap[fieldId];
+
+          /**
+           * If the field is an admin field, the rules engine returns an error, as admin fields cannot be the subject of rules engine actions.
+           */
+          if(adminFieldMap[fieldId]){
+            return cb(new Error("Submission " + fieldId + " is an admin field. Admin fields cannot be passed to the rules engine."));
+          } else if(!field){
+            return cb(new Error("Field does not exist in form"));
+          }
+
+          async.waterfall([
+
+            function testPage(cb) {
+              if (checkContainingPage) {
+                isPageVisible(field.pageId, cb);
+              } else {
+                return cb(undefined, true);
+              }
+            },
+            function testField(pageVisible, cb) {
+              if (!pageVisible) { // if page containing field is not visible then don't need to check field
+                return cb(undefined, false);
+              }
+
+              if (isFieldRuleSubject(fieldId)) { // If the field is the subject of a rule it may have been hidden
+                return rulesResult(fieldRuleSubjectMap[fieldId], cb); // execute field rules
+              } else {
+                return cb(undefined, true); // if not subject of field rules then can't be hidden
+              }
+            }
+          ], cb);
+        });
+      }
+
+      /*
+       * check all rules actions
+       *      res:
+       *      {
+       *          "actions": {
+       *              "pages": {
+       *                  "targetId": {
+       *                      "targetId": "",
+       *                      "action": "show|hide"
+       *                  }
+       *              },
+       *              "fields": {
+       *              }
+       *          }
+       *      }
+       */
+      function checkRules(submissionJSON, cb) {
+        init(function (err) {
+          if (err) return cb(err);
+
+          initSubmission(submissionJSON, function (err) {
+            if (err) return cb(err);
+            var actions = {};
+
+            async.parallel([
+
+              function (cb) {
+                actions.fields = {};
+                async.eachSeries(Object.keys(fieldRuleSubjectMap), function (fieldId, cb) {
+                  isFieldVisible(fieldId, false, function (err, fieldVisible) {
+                    if (err) return cb(err);
+                    actions.fields[fieldId] = {
+                      targetId: fieldId,
+                      action: (fieldVisible ? "show" : "hide")
+                    };
+                    return cb();
+                  });
+                }, cb);
+              },
+              function (cb) {
+                actions.pages = {};
+                async.eachSeries(Object.keys(pageRuleSubjectMap), function (pageId, cb) {
+                  isPageVisible(pageId, function (err, pageVisible) {
+                    if (err) return cb(err);
+                    actions.pages[pageId] = {
+                      targetId: pageId,
+                      action: (pageVisible ? "show" : "hide")
+                    };
+                    return cb();
+                  });
+                }, cb);
+              }
+            ], function (err) {
+              if (err) return cb(err);
+
+              return cb(undefined, {
+                actions: actions
+              });
+            });
+          });
+        });
+      }
+
+      return {
+        validateForm: validateForm,
+        validateField: validateField,
+        validateFieldValue: validateFieldValue,
+        checkRules: checkRules,
+
+        // The following are used internally, but exposed for tests
+        validateFieldInternal: validateFieldInternal,
+        initSubmission: initSubmission,
+        isFieldVisible: isFieldVisible,
+        isConditionActive: isConditionActive
+      };
     };
-  };
 
-  function isNumberBetween(num, min, max) {
-    var numVal = parseInt(num, 10);
-    return (!isNaN(numVal) && (numVal >= min) && (numVal <= max));
-  }
-
-  function cvtTimeToSeconds(fieldValue) {
-    var seconds = 0;
-    if (typeof fieldValue === "string") {
-      var parts = fieldValue.split(':');
-      valid = (parts.length === 2) || (parts.length === 3);
-      if (valid) {
-        valid = isNumberBetween(parts[0], 0, 23);
-        seconds += (parseInt(parts[0], 10) * 60 * 60);
-      }
-      if (valid) {
-        valid = isNumberBetween(parts[1], 0, 59);
-        seconds += (parseInt(parts[1], 10) * 60);
-      }
-      if (valid && (parts.length === 3)) {
-        valid = isNumberBetween(parts[2], 0, 59);
-        seconds += parseInt(parts[2], 10);
-      }
-    }
-    return seconds;
-  }
-
-  function isConditionActive(field, fieldValue, testValue, condition) {
-
-    var fieldType = field.type;
-    var fieldOptions = field.fieldOptions ? field.fieldOptions : {};
-
-    if(typeof(fieldValue) === 'undefined' || fieldValue === null){
-      return false;
+    function isNumberBetween(num, min, max) {
+      var numVal = parseInt(num, 10);
+      return (!isNaN(numVal) && (numVal >= min) && (numVal <= max));
     }
 
-    function numericalComparison(condition, fieldValue, testValue){
-      var fieldValNum = parseInt(fieldValue, 10);
-      var testValNum = parseInt(testValue, 10);  
+    function cvtTimeToSeconds(fieldValue) {
+      var seconds = 0;
+      if (typeof fieldValue === "string") {
+        var parts = fieldValue.split(':');
+        valid = (parts.length === 2) || (parts.length === 3);
+        if (valid) {
+          valid = isNumberBetween(parts[0], 0, 23);
+          seconds += (parseInt(parts[0], 10) * 60 * 60);
+        }
+        if (valid) {
+          valid = isNumberBetween(parts[1], 0, 59);
+          seconds += (parseInt(parts[1], 10) * 60);
+        }
+        if (valid && (parts.length === 3)) {
+          valid = isNumberBetween(parts[2], 0, 59);
+          seconds += parseInt(parts[2], 10);
+        }
+      }
+      return seconds;
+    }
 
-      if(isNaN(fieldValNum) || isNaN(testValNum)){
+    function isConditionActive(field, fieldValue, testValue, condition) {
+
+      var fieldType = field.type;
+      var fieldOptions = field.fieldOptions ? field.fieldOptions : {};
+
+      if(typeof(fieldValue) === 'undefined' || fieldValue === null){
         return false;
       }
 
+      function numericalComparison(condition, fieldValue, testValue){
+        var fieldValNum = parseInt(fieldValue, 10);
+        var testValNum = parseInt(testValue, 10);
+
+        if(isNaN(fieldValNum) || isNaN(testValNum)){
+          return false;
+        }
+
+        if ("is equal to" === condition) {
+          return fieldValNum === testValNum;
+        } else if ("is less than" === condition) {
+          return fieldValNum < testValNum;
+        } else if ("is greater than" === condition) {
+          return fieldValNum > testValNum;
+        } else {
+          return false;
+        }
+      }
+
+      var valid = true;
       if ("is equal to" === condition) {
-        return fieldValNum === testValNum;
-      } else if ("is less than" === condition) {
-        return fieldValNum < testValNum;
+        valid = numericalComparison("is equal to", fieldValue, testValue);
       } else if ("is greater than" === condition) {
-        return fieldValNum > testValNum; 
+        valid = numericalComparison("is greater than", fieldValue, testValue);
+      } else if ("is less than" === condition) {
+        valid = numericalComparison("is less than", fieldValue, testValue);
+      } else if ("is at" === condition) {
+        valid = false;
+        if (fieldType === FIELD_TYPE_DATETIME) {
+          switch (fieldOptions.definition.datetimeUnit) {
+            case FIELD_TYPE_DATETIME_DATETIMEUNIT_DATEONLY:
+              try {
+                valid = (new Date(new Date(fieldValue).toDateString()).getTime() === new Date(new Date(testValue).toDateString()).getTime());
+              } catch (e) {
+                valid = false;
+              }
+              break;
+            case FIELD_TYPE_DATETIME_DATETIMEUNIT_TIMEONLY:
+              valid = cvtTimeToSeconds(fieldValue) === cvtTimeToSeconds(testValue);
+              break;
+            case FIELD_TYPE_DATETIME_DATETIMEUNIT_DATETIME:
+              try {
+                valid = (new Date(fieldValue).getTime() === new Date(testValue).getTime());
+              } catch (e) {
+                valid = false;
+              }
+              break;
+            default:
+              valid = false; // TODO should raise error here?
+              break;
+          }
+        }
+      } else if ("is before" === condition) {
+        valid = false;
+        if (fieldType === FIELD_TYPE_DATETIME) {
+          switch (fieldOptions.definition.datetimeUnit) {
+            case FIELD_TYPE_DATETIME_DATETIMEUNIT_DATEONLY:
+              try {
+                valid = (new Date(new Date(fieldValue).toDateString()).getTime() < new Date(new Date(testValue).toDateString()).getTime());
+              } catch (e) {
+                valid = false;
+              }
+              break;
+            case FIELD_TYPE_DATETIME_DATETIMEUNIT_TIMEONLY:
+              valid = cvtTimeToSeconds(fieldValue) < cvtTimeToSeconds(testValue);
+              break;
+            case FIELD_TYPE_DATETIME_DATETIMEUNIT_DATETIME:
+              try {
+                valid = (new Date(fieldValue).getTime() < new Date(testValue).getTime());
+              } catch (e) {
+                valid = false;
+              }
+              break;
+            default:
+              valid = false; // TODO should raise error here?
+              break;
+          }
+        }
+      } else if ("is after" === condition) {
+        valid = false;
+        if (fieldType === FIELD_TYPE_DATETIME) {
+          switch (fieldOptions.definition.datetimeUnit) {
+            case FIELD_TYPE_DATETIME_DATETIMEUNIT_DATEONLY:
+              try {
+                valid = (new Date(new Date(fieldValue).toDateString()).getTime() > new Date(new Date(testValue).toDateString()).getTime());
+              } catch (e) {
+                valid = false;
+              }
+              break;
+            case FIELD_TYPE_DATETIME_DATETIMEUNIT_TIMEONLY:
+              valid = cvtTimeToSeconds(fieldValue) > cvtTimeToSeconds(testValue);
+              break;
+            case FIELD_TYPE_DATETIME_DATETIMEUNIT_DATETIME:
+              try {
+                valid = (new Date(fieldValue).getTime() > new Date(testValue).getTime());
+              } catch (e) {
+                valid = false;
+              }
+              break;
+            default:
+              valid = false; // TODO should raise error here?
+              break;
+          }
+        }
+      } else if ("is" === condition) {
+        if (fieldType === FIELD_TYPE_CHECKBOX) {
+          valid = fieldValue && fieldValue.selections && fieldValue.selections.indexOf(testValue) !== -1;
+        } else {
+          valid = fieldValue === testValue;
+        }
+      } else if ("is not" === condition) {
+        if (fieldType === FIELD_TYPE_CHECKBOX) {
+          valid = fieldValue && fieldValue.selections && fieldValue.selections.indexOf(testValue) === -1;
+        } else {
+          valid = fieldValue !== testValue;
+        }
+      } else if ("contains" === condition) {
+        valid = fieldValue.indexOf(testValue) !== -1;
+      } else if ("does not contain" === condition) {
+        valid = fieldValue.indexOf(testValue) === -1;
+      } else if ("begins with" === condition) {
+        valid = fieldValue.substring(0, testValue.length) === testValue;
+      } else if ("ends with" === condition) {
+        valid = fieldValue.substring(Math.max(0, (fieldValue.length - testValue.length)), fieldValue.length) === testValue;
       } else {
-        return false;
+        valid = false;
       }
+
+      return valid;
     }
 
-    var valid = true;
-    if ("is equal to" === condition) {
-      valid = numericalComparison("is equal to", fieldValue, testValue);
-    } else if ("is greater than" === condition) {
-      valid = numericalComparison("is greater than", fieldValue, testValue);
-    } else if ("is less than" === condition) {
-      valid = numericalComparison("is less than", fieldValue, testValue);
-    } else if ("is at" === condition) {
-      valid = false;
-      if (fieldType === FIELD_TYPE_DATETIME) {
-        switch (fieldOptions.definition.datetimeUnit) {
-          case FIELD_TYPE_DATETIME_DATETIMEUNIT_DATEONLY:
-            try {
-              valid = (new Date(new Date(fieldValue).toDateString()).getTime() == new Date(new Date(testValue).toDateString()).getTime());
-            } catch (e) {
-              valid = false;
-            }
-            break;
-          case FIELD_TYPE_DATETIME_DATETIMEUNIT_TIMEONLY:
-            valid = cvtTimeToSeconds(fieldValue) === cvtTimeToSeconds(testValue);
-            break;
-          case FIELD_TYPE_DATETIME_DATETIMEUNIT_DATETIME:
-            try {
-              valid = (new Date(fieldValue).getTime() == new Date(testValue).getTime());
-            } catch (e) {
-              valid = false;
-            }
-            break;
-          default:
-            valid = false; // TODO should raise error here?
-            break;
-        }
-      }
-    } else if ("is before" === condition) {
-      valid = false;
-      if (fieldType === FIELD_TYPE_DATETIME) {
-        switch (fieldOptions.definition.datetimeUnit) {
-          case FIELD_TYPE_DATETIME_DATETIMEUNIT_DATEONLY:
-            try {
-              valid = (new Date(new Date(fieldValue).toDateString()).getTime() < new Date(new Date(testValue).toDateString()).getTime());
-            } catch (e) {
-              valid = false;
-            }
-            break;
-          case FIELD_TYPE_DATETIME_DATETIMEUNIT_TIMEONLY:
-            valid = cvtTimeToSeconds(fieldValue) < cvtTimeToSeconds(testValue);
-            break;
-          case FIELD_TYPE_DATETIME_DATETIMEUNIT_DATETIME:
-            try {
-              valid = (new Date(fieldValue).getTime() < new Date(testValue).getTime());
-            } catch (e) {
-              valid = false;
-            }
-            break;
-          default:
-            valid = false; // TODO should raise error here?
-            break;
-        }
-      }
-    } else if ("is after" === condition) {
-      valid = false;
-      if (fieldType === FIELD_TYPE_DATETIME) {
-        switch (fieldOptions.definition.datetimeUnit) {
-          case FIELD_TYPE_DATETIME_DATETIMEUNIT_DATEONLY:
-            try {
-              valid = (new Date(new Date(fieldValue).toDateString()).getTime() > new Date(new Date(testValue).toDateString()).getTime());
-            } catch (e) {
-              valid = false;
-            }
-            break;
-          case FIELD_TYPE_DATETIME_DATETIMEUNIT_TIMEONLY:
-            valid = cvtTimeToSeconds(fieldValue) > cvtTimeToSeconds(testValue);
-            break;
-          case FIELD_TYPE_DATETIME_DATETIMEUNIT_DATETIME:
-            try {
-              valid = (new Date(fieldValue).getTime() > new Date(testValue).getTime());
-            } catch (e) {
-              valid = false;
-            }
-            break;
-          default:
-            valid = false; // TODO should raise error here?
-            break;
-        }
-      }
-    } else if ("is" === condition) {
-      if (fieldType === FIELD_TYPE_CHECKBOX) {
-        valid = fieldValue && fieldValue.selections && fieldValue.selections.indexOf(testValue) !== -1;
-      } else {
-        valid = fieldValue === testValue;
-      }
-    } else if ("is not" === condition) {
-      if (fieldType === FIELD_TYPE_CHECKBOX) {
-        valid = fieldValue && fieldValue.selections && fieldValue.selections.indexOf(testValue) === -1;
-      } else {
-        valid = fieldValue !== testValue;
-      }
-    } else if ("contains" === condition) {
-      valid = fieldValue.indexOf(testValue) !== -1;
-    } else if ("does not contain" === condition) {
-      valid = fieldValue.indexOf(testValue) === -1;
-    } else if ("begins with" === condition) {
-      valid = fieldValue.substring(0, testValue.length) === testValue;
-    } else if ("ends with" === condition) {
-      valid = fieldValue.substring(Math.max(0, (fieldValue.length - testValue.length)), fieldValue.length) === testValue;
-    } else {
-      valid = false;
+    if (typeof module !== 'undefined' && module.exports) {
+      module.exports = formsRulesEngine;
     }
 
-    return valid;
-  }
-
-  if (typeof module !== 'undefined' && module.exports) {
-    module.exports = formsRulesEngine;
-  }
-
-}());
-/* This is the suffix file */
+  }());
+  /* This is the suffix file */
   return module.exports(formDef);
 }
 
