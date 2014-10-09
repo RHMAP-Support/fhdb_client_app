@@ -9,7 +9,6 @@ call which will return the remote config.
 $fh.ready(function() {
   // Device is ready.
   document.getElementById('list_button').onclick = function() {
-  alert('button clicked');
   // List all entries.
   $fh.cloud(
     {
