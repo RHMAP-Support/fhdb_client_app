@@ -13,8 +13,7 @@ $fh.ready(function() {
   // List all entries.
   $fh.cloud(
     {
-      "path":'sssss',
-      "type": "GET"
+      "path":'fhdb/list'
     },
     function(res) {
       // Success
