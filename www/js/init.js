@@ -13,7 +13,7 @@ $fh.ready(function() {
   $fh.cloud(
     {
       //"path":"fhdb"
-      "path" : "fff"
+      "path" : "bd"
     },
     function(res) {
       // Success
